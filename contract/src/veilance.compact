@@ -1,0 +1,506 @@
+// Veilance — Confidential Provenance Infrastructure for Regulated Supply Chains.
+//
+// "Prove the chain. Keep the chain private."
+//
+// The ledger holds ONLY: an admin id, a policy version, a public carbon
+// threshold, three Merkle trees of hashed leaves, a nullifier set and an
+// attestation map keyed by an opaque holder-bound hash, and an append-only
+// inbox of opaque sealed ciphertexts. It never holds the supplier graph: the
+// link between a consumed commitment and the nullifier that consumes it exists
+// only inside the ZK proof and in the prover's local private state.
+
+pragma language_version >= 0.23;
+
+import CompactStandardLibrary;
+
+// --------------------------------------------------------------------------
+// Types
+// --------------------------------------------------------------------------
+
+// A provenance credential. Held privately by its owner; only its commitment
+// ever reaches the ledger.
+export struct Credential {
+  ownerId: Bytes<32>;
+  originId: Bytes<32>;
+  materialType: Bytes<32>;
+  carbonClass: Uint<8>;
+  batchSecret: Bytes<32>;
+}
+
+// The material a root party (e.g. a certified mine) is about to issue.
+// Same shape as Credential minus the owner, which the circuit fixes to the
+// declared recipient.
+export struct MaterialSpec {
+  originId: Bytes<32>;
+  materialType: Bytes<32>;
+  carbonClass: Uint<8>;
+  batchSecret: Bytes<32>;
+}
+
+// Verifier profile codes recorded in `attestations`.
+export enum VerifierProfile {
+  none, // 0 — unused, `default<VerifierProfile>`
+  consumer, // 1
+  procurement, // 2
+  regulator // 3
+}
+
+// One recorded attestation. The map VALUE now carries the policy version that
+// was in force when the proof was made, so a verifier can tell a fresh
+// attestation from one made under a policy that has since changed.
+export struct Attestation {
+  profile: Uint<8>;
+  policyVersion: Uint<64>;
+}
+
+// --------------------------------------------------------------------------
+// Ledger (L1 — public shared state)
+// --------------------------------------------------------------------------
+
+// Pseudonymous admin identity: H("veilance:id", adminSecret). Sealed, so it can
+// only be written by the constructor.
+export sealed ledger adminId: Bytes<32>;
+
+// Bumped on every admin policy change (allow-list insert, threshold change).
+export ledger policyVersion: Counter;
+
+// Public policy parameter. Comparisons against it stay private (only the
+// boolean outcome is proven), the threshold itself is deliberately public.
+export ledger carbonThreshold: Uint<8>;
+
+// Allow-list of certified origins. leaf = originId.
+// MVP models "material is not from a restricted source" as "origin is on the
+// certified allow-list" — a Merkle NON-membership proof is out of scope.
+export ledger certifiedOrigins: MerkleTree<8, Bytes<32>>;
+
+// Allow-list of certified suppliers. leaf = certLeaf = H("veilance:cert", partyId, certId).
+export ledger certifiedSuppliers: MerkleTree<8, Bytes<32>>;
+
+// Every provenance commitment ever created. Historic, so a path proved against
+// an older root stays valid after later insertions. Membership is proven with a
+// PRIVATE Merkle path inside the circuit — the consumed commitment is never
+// disclosed, which is what keeps the supplier graph private.
+export ledger provenanceTree: HistoricMerkleTree<16, Bytes<32>>;
+
+// Consumed credentials. nullifier = H("veilance:nf", commitment, ownerSecret).
+export ledger nullifiers: Set<Bytes<32>>;
+
+// attestationKey -> what was proven under it.
+//
+// The key is NOT the raw verifier challenge. It is
+// H("veilance:att", challenge, cred.ownerId, profile), computed inside the
+// circuit from the PROVEN credential's ownerId. See `attestationKeyOf` and
+// `recordAttestation` for why, and for the disclosure analysis.
+export ledger attestations: Map<Bytes<32>, Attestation>;
+
+// partyId -> that party's X25519 public key, published so anyone can seal a
+// credential to them. Overwriting is allowed: that is key rotation. A party can
+// only ever write the entry for the partyId derived from its OWN secret, which
+// is what `registerEncKey` enforces.
+export ledger partyEncKeys: Map<Bytes<32>, Bytes<32>>;
+
+// Append-only inbox of sealed credential pre-images (MIP-0012 shape). Midnight
+// contract calls have no memo field, the Zswap ciphertext slot is restricted to
+// ShieldedCoinInfo and forbidden on contract outputs, and the DApp connector
+// exposes only the wallet's encryption PUBLIC key — so delivering a credential's
+// pre-image to its recipient has to happen through contract state.
+//
+// Keyed by an ORDINAL, deliberately:
+//   - keying by recipientId would publish who each delivery is for;
+//   - keying by commitment would add nothing (the commitment is already inside
+//     the sealed payload) while making the inbox a second index of the tree.
+// An ordinal key leaks only "the Nth credential ever issued", which the
+// provenance tree's leaf count already leaks. Recipients find their own entries
+// by trial decryption (see src/sealed-entry.ts).
+export ledger credentialInbox: Map<Uint<64>, Bytes<192>>;
+
+export ledger credentialInboxCount: Counter;
+
+// --------------------------------------------------------------------------
+// Witnesses (L2 — each participant's local private state)
+// --------------------------------------------------------------------------
+
+// The admin's party secret. Only H("veilance:id", it) is on-chain.
+witness adminSecret(): Bytes<32>;
+
+// The acting party's secret. partyId = H("veilance:id", ownerSecret()).
+witness ownerSecret(): Bytes<32>;
+
+// The acting party's certification id, and the Merkle path proving that
+// certLeaf(partyId, certId) is in `certifiedSuppliers`.
+witness certId(): Bytes<32>;
+
+witness certPath(): MerkleTreePath<8, Bytes<32>>;
+
+// Merkle path proving the credential's origin is in `certifiedOrigins`.
+witness originPath(): MerkleTreePath<8, Bytes<32>>;
+
+// The credential the acting party currently holds, and the Merkle path proving
+// its commitment is in `provenanceTree`.
+witness heldCredential(): Credential;
+
+witness commitmentPath(): MerkleTreePath<16, Bytes<32>>;
+
+// Material being issued by a root party.
+witness issuedMaterial(): MaterialSpec;
+
+// Downstream recipient and the fresh secrets for the credential being minted.
+witness recipientId(): Bytes<32>;
+
+witness newBatchSecret(): Bytes<32>;
+
+witness newCarbonClass(): Uint<8>;
+
+// --------------------------------------------------------------------------
+// Pure derivations — every hash in the protocol is defined exactly once here.
+// Domain-separated so that an id can never be replayed as a cert leaf, a
+// commitment as a nullifier, etc.
+// --------------------------------------------------------------------------
+
+export pure circuit partyIdOf(secret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "veilance:id"), secret]);
+}
+
+export pure circuit certLeafOf(partyId: Bytes<32>, cid: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([pad(32, "veilance:cert"), partyId, cid]);
+}
+
+export pure circuit commitmentOf(c: Credential): Bytes<32> {
+  return persistentHash<Vector<6, Bytes<32>>>(
+           [pad(32, "veilance:cm"),
+            c.ownerId,
+            c.originId,
+            c.materialType,
+            (c.carbonClass as Field) as Bytes<32>,
+            c.batchSecret]
+           );
+}
+
+export pure circuit nullifierOf(commitment: Bytes<32>, secret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([pad(32, "veilance:nf"), commitment, secret]);
+}
+
+// The key an attestation is filed under. Binds a verifier's challenge to the
+// HOLDER that actually proved it, so a third party who overhears the challenge
+// cannot occupy the slot the verifier is going to read.
+//
+// The verifier knows the partyId of the counterparty it is dealing with, so it
+// recomputes this key off-chain (via `pureCircuits.attestationKeyOf`) and looks
+// it up. A different holder using the same challenge lands on a DIFFERENT key,
+// so the verifier's lookup simply does not find it. Binding is by lookup, not
+// by rejection: the contract has no idea who the verifier expected.
+//
+// `profile` is part of the key so that one challenge can carry one attestation
+// per profile (a verifier may legitimately ask for consumer AND procurement),
+// while a replay of the same profile is still rejected.
+export pure circuit attestationKeyOf(
+                      challenge: Bytes<32>,
+                      ownerId: Bytes<32>,
+                      profile: Uint<8>
+                      ): Bytes<32> {
+  return persistentHash<Vector<4, Bytes<32>>>(
+           [pad(32, "veilance:att"), challenge, ownerId, (profile as Field) as Bytes<32>]
+           );
+}
+
+// --------------------------------------------------------------------------
+// Constructor
+// --------------------------------------------------------------------------
+
+constructor() {
+  // DISCLOSURE: the admin's pseudonymous id must be public so that later admin
+  // circuits can be checked against it. It is a one-way hash of adminSecret;
+  // the secret itself never leaves the prover.
+  adminId = disclose(partyIdOf(adminSecret()));
+  carbonThreshold = 0;
+}
+
+// --------------------------------------------------------------------------
+// Internal helpers
+// --------------------------------------------------------------------------
+
+// Proves the caller holds `adminSecret` matching the sealed `adminId`.
+circuit assertAdmin(): [] {
+  // No disclose(): an `assert` on witness-derived data is not a disclosure
+  // boundary. Only the fact that the transaction succeeded is observable.
+  assert(partyIdOf(adminSecret()) == adminId, "veilance: caller is not the admin");
+}
+
+// (b) supplierCertified — proves certLeaf(partyId, certId) is in
+// `certifiedSuppliers` without revealing which leaf.
+circuit assertSupplierCertified(partyId: Bytes<32>): [] {
+  const path = certPath();
+  // Bind the supplied path to THIS party's cert leaf, otherwise a prover could
+  // present any certified party's path. No disclosure: private assert.
+  assert(path.leaf == certLeafOf(partyId, certId()),
+         "veilance: cert path does not match the caller's certificate"
+         );
+  // DISCLOSURE: the recomputed root. Roots are already public ledger state, and
+  // a root reveals nothing about which leaf was proven.
+  assert(certifiedSuppliers.checkRoot(disclose(merkleTreePathRoot<8, Bytes<32>>(path))),
+         "veilance: supplier is not certified"
+         );
+}
+
+// (c) originNotRestricted — modelled as membership in the certified-origin
+// allow-list, re-checked against the CURRENT policy on every use.
+circuit assertOriginCertified(originId: Bytes<32>): [] {
+  const path = originPath();
+  // No disclosure: private assert.
+  assert(path.leaf == originId, "veilance: origin path does not match the credential origin");
+  // DISCLOSURE: the recomputed root (public ledger state).
+  assert(certifiedOrigins.checkRoot(disclose(merkleTreePathRoot<8, Bytes<32>>(path))),
+         "veilance: origin is not certified"
+         );
+}
+
+// (a) upstreamCredentialValid — proves the caller owns a credential whose
+// commitment is in `provenanceTree`. Returns the caller's secret, the
+// credential and its commitment for reuse; nothing here is disclosed.
+circuit provenCredential(): [Bytes<32>, Credential, Bytes<32>] {
+  const secret = ownerSecret();
+  const cred = heldCredential();
+  // Proves ownerId was derived from the caller's secret. No disclosure needed.
+  assert(cred.ownerId == partyIdOf(secret), "veilance: caller does not own this credential");
+
+  const commitment = commitmentOf(cred);
+  const path = commitmentPath();
+  // Bind the path to THIS commitment. No disclosure: private assert.
+  assert(path.leaf == commitment, "veilance: merkle path does not match the credential commitment");
+  // DISCLOSURE: the recomputed root only. The commitment itself stays private,
+  // which is the whole point: nothing links this proof to the leaf it uses.
+  assert(provenanceTree.checkRoot(disclose(merkleTreePathRoot<16, Bytes<32>>(path))),
+         "veilance: credential is not in the provenance tree"
+         );
+
+  return [secret, cred, commitment];
+}
+
+// Appends one sealed entry to the inbox, in the SAME transaction as the
+// commitment insertion that created the credential. Commitment and delivery are
+// therefore atomic: a credential cannot exist on chain without its pre-image
+// having been delivered in the same tx (or, if the issuer sealed garbage, with a
+// delivery that provably decrypts for nobody — see NOTES.md).
+//
+// The contract never inspects `entry`. It cannot: it is 192 bytes of ciphertext
+// with no in-circuit structure, and Compact has no equality on cells that large
+// anyway. Every property of the payload is the sender's responsibility.
+//
+// DISCLOSURE: `entry`. Parameters of an exported circuit are witness-tainted, so
+// writing one to the ledger requires an explicit disclose(). What becomes public
+// is 192 bytes of AEAD output under an ephemeral X25519 sender key: it is
+// indistinguishable from random to anyone but the holder of the recipient's
+// private key, and — because the sender key is ephemeral and discarded — it does
+// not identify the recipient, the sender, or even whether two entries share
+// either. The ordinal key and the fact that an insertion happened are the only
+// public facts. See NOTES.md for the full analysis.
+circuit deliverSealedEntry(entry: Bytes<192>): [] {
+  credentialInbox.insert(credentialInboxCount.read(), disclose(entry));
+  credentialInboxCount.increment(1);
+}
+
+// Records an attestation, filed under a key that binds the verifier's challenge
+// to the holder that actually proved it. `ownerId` comes from the credential
+// proven by `provenCredential()`, so it cannot be chosen freely by the caller.
+//
+// The RAW CHALLENGE IS NO LONGER STORED, and is no longer disclosed anywhere.
+//
+// DISCLOSURE ANALYSIS for the key:
+//   key = H("veilance:att", challenge, ownerId, profile)
+// Publishing it is a disclosure of a preimage-resistant hash over three values.
+// `profile` is public (one per circuit) and `ownerId` is publicly enumerable
+// (party ids appear verbatim as `certifySupplier` arguments), so the ONLY thing
+// standing between an observer and "which party attested" is `challenge`.
+//   - An observer who does NOT know the challenge learns nothing: the key is an
+//     opaque 32-byte value, unlinkable to any party or to any other attestation.
+//   - An observer who DOES know the challenge (i.e. the verifier who issued it)
+//     can confirm ownerId by recomputing the key — which is exactly the intended
+//     function, and that party already knows who it is dealing with.
+// Therefore the challenge MUST be >= 128 bits of fresh CSPRNG entropy. A
+// low-entropy or guessable challenge turns this key into a dictionary attack on
+// ownerId and de-anonymises the attester to the whole chain. The contract cannot
+// enforce this — the challenge is supplied by the verifier. See NOTES.md.
+circuit recordAttestation(challenge: Bytes<32>, ownerId: Bytes<32>, profile: VerifierProfile): [] {
+  // DISCLOSURE (exactly once, here): the key. See the analysis above. This is
+  // the handle the verifier recomputes off-chain and reads the result under.
+  const key = disclose(attestationKeyOf(challenge, ownerId, profile as Uint<8>));
+  assert(!attestations.member(key),
+         "veilance: challenge already used by this holder for this profile"
+         );
+  // `policyVersion.read()` is public ledger state, so nothing witness-derived
+  // reaches the value side beyond the profile code, which is a compile-time
+  // constant per circuit.
+  attestations.insert(
+    key,
+    Attestation { profile: profile as Uint<8>, policyVersion: policyVersion.read() }
+    );
+}
+
+// --------------------------------------------------------------------------
+// Key registration (any party, no certification required)
+// --------------------------------------------------------------------------
+
+// Publishes the caller's X25519 public key so others can seal credentials to it.
+// Calling it again rotates the key. There is no authorisation check beyond the
+// derivation itself: the map key is `partyIdOf(ownerSecret())`, so a caller can
+// only ever write the slot belonging to the secret it actually holds. It cannot
+// address another party's slot, and it cannot delete one.
+export circuit registerEncKey(encPk: Bytes<32>): [] {
+  // DISCLOSURE (partyId): the caller's pseudonymous id must be public — it is
+  // the lookup key senders use. It is already public for any certified supplier
+  // (it appears verbatim as a `certifySupplier` argument), and it is a one-way
+  // hash of ownerSecret regardless.
+  //
+  // DISCLOSURE (encPk): an X25519 public key is public by definition; that is
+  // the entire point of publishing it. It does carry a linkability cost: an
+  // observer sees "this partyId registered a key at this time", and a rotation
+  // is a visible event. Neither reveals anything about the party's credentials.
+  partyEncKeys.insert(disclose(partyIdOf(ownerSecret())), disclose(encPk));
+}
+
+// --------------------------------------------------------------------------
+// Admin circuits
+// --------------------------------------------------------------------------
+
+export circuit certifyOrigin(originId: Bytes<32>): [] {
+  assertAdmin();
+  // DISCLOSURE: an admin-published policy value. MerkleTree.insert stores only
+  // leaf_hash(originId), but the allow-list is intentionally an admin act.
+  certifiedOrigins.insert(disclose(originId));
+  policyVersion.increment(1);
+}
+
+export circuit certifySupplier(partyId: Bytes<32>, cid: Bytes<32>): [] {
+  assertAdmin();
+  // DISCLOSURE: an admin-published policy value.
+  certifiedSuppliers.insert(disclose(certLeafOf(partyId, cid)));
+  policyVersion.increment(1);
+}
+
+export circuit setCarbonThreshold(t: Uint<8>): [] {
+  assertAdmin();
+  // DISCLOSURE: the threshold is public policy by design — verifiers must know
+  // what "carbonClass <= threshold" means.
+  carbonThreshold = disclose(t);
+  policyVersion.increment(1);
+}
+
+// --------------------------------------------------------------------------
+// Circuit 1 — Issue Provenance (run by a certified root party, e.g. a mine)
+// --------------------------------------------------------------------------
+
+export circuit issueProvenance(entry: Bytes<192>): Bytes<32> {
+  const issuerId = partyIdOf(ownerSecret());
+  assertSupplierCertified(issuerId);
+
+  const spec = issuedMaterial();
+  assertOriginCertified(spec.originId);
+
+  const cred = Credential { ownerId: recipientId(),
+                            originId: spec.originId,
+                            materialType: spec.materialType,
+                            carbonClass: spec.carbonClass,
+                            batchSecret: spec.batchSecret };
+  const commitment = commitmentOf(cred);
+
+  // DISCLOSURE: the new commitment is the public output of the circuit. It is a
+  // one-way hash over a high-entropy batchSecret, so it reveals nothing about
+  // owner, origin, material or carbon class.
+  provenanceTree.insert(disclose(commitment));
+  // Deliver the pre-image to the recipient in the same transaction.
+  deliverSealedEntry(entry);
+  return disclose(commitment);
+}
+
+// --------------------------------------------------------------------------
+// Circuit 2 — Transfer / Transform Provenance (run by the current owner)
+// --------------------------------------------------------------------------
+
+export circuit transferProvenance(entry: Bytes<192>): [Bytes<32>, Bytes<32>] {
+  // (a) upstreamCredentialValid
+  const [secret, cred, commitment] = provenCredential();
+  // (b) supplierCertified
+  assertSupplierCertified(cred.ownerId);
+  // (c) originNotRestricted, under the CURRENT policy
+  assertOriginCertified(cred.originId);
+
+  // (d) credentialNotConsumed
+  const nullifier = nullifierOf(commitment, secret);
+  // DISCLOSURE: the nullifier must be public — it is the shared double-claim
+  // state. It is H(commitment, ownerSecret): without ownerSecret nobody can
+  // link it back to the commitment it consumes.
+  assert(!nullifiers.member(disclose(nullifier)), "veilance: credential already consumed");
+  nullifiers.insert(disclose(nullifier));
+
+  // Bind every witness to a const before use. A witness is untrusted code and
+  // may return a DIFFERENT value on each call, so calling it once for a check
+  // and again for the payload would let a prover pass the check with one value
+  // and commit to another.
+  const newClass = newCarbonClass();
+  // Fresh randomness: this is what makes the new commitment unlinkable to the
+  // old one, and it is the only thing hiding the commitment's low-entropy
+  // fields (see NOTES.md, finding S-1).
+  const newSecret = newBatchSecret();
+  const recipient = recipientId();
+
+  // ADDED BEYOND THE SPEC (see NOTES.md, finding S-2): carbon class may only
+  // get worse down the chain. Without this a holder could reset the class to 0
+  // on every hop, which would make `carbonClass <= carbonThreshold` in
+  // attestProcurement/attestRegulator meaningless. Remove this single assert
+  // for strict landing.md fidelity.
+  assert(newClass >= cred.carbonClass, "veilance: carbon class may not decrease across a transfer");
+
+  const newCred = Credential { ownerId: recipient,
+                               originId: cred.originId, // provenance carries over unchanged
+                               materialType: cred.materialType,
+                               carbonClass: newClass,
+                               batchSecret: newSecret };
+  const newCommitment = commitmentOf(newCred);
+
+  // DISCLOSURE: the new commitment is the public output.
+  provenanceTree.insert(disclose(newCommitment));
+  // Deliver the pre-image to the recipient in the same transaction.
+  deliverSealedEntry(entry);
+
+  return [disclose(nullifier), disclose(newCommitment)];
+}
+
+// --------------------------------------------------------------------------
+// Circuit 3 — Verify Policy (selective disclosure, run by the current owner)
+// --------------------------------------------------------------------------
+
+// Consumer profile: responsible sourcing only.
+export circuit attestConsumer(challenge: Bytes<32>): [] {
+  const [_secret, cred, _commitment] = provenCredential();
+  assertOriginCertified(cred.originId);
+  recordAttestation(challenge, cred.ownerId, VerifierProfile.consumer);
+}
+
+// OEM procurement profile: + supplier certification + carbon class under the
+// public threshold. The carbon class itself is never revealed.
+export circuit attestProcurement(challenge: Bytes<32>): [] {
+  const [_secret, cred, _commitment] = provenCredential();
+  assertOriginCertified(cred.originId);
+  assertSupplierCertified(cred.ownerId);
+  // The carbon class stays private: the circuit proves the comparison against
+  // the public threshold without disclosing the class itself. An `assert` is
+  // not a disclosure boundary, so no disclose() is needed or wanted here.
+  assert(cred.carbonClass <= carbonThreshold, "veilance: carbon class exceeds the policy threshold");
+  recordAttestation(challenge, cred.ownerId, VerifierProfile.procurement);
+}
+
+// Regulator profile: + the credential has not been consumed downstream.
+export circuit attestRegulator(challenge: Bytes<32>): [] {
+  const [secret, cred, commitment] = provenCredential();
+  assertOriginCertified(cred.originId);
+  assertSupplierCertified(cred.ownerId);
+  // As in attestProcurement: the class stays private, only the comparison is proven.
+  assert(cred.carbonClass <= carbonThreshold, "veilance: carbon class exceeds the policy threshold");
+  // DISCLOSURE: the nullifier. Unavoidable — `nullifiers` is a public Set and
+  // any membership test reveals the element tested. See NOTES.md: this makes a
+  // regulator attestation linkable to the later spend of the same credential.
+  assert(!nullifiers.member(disclose(nullifierOf(commitment, secret))),
+         "veilance: credential already consumed"
+         );
+  recordAttestation(challenge, cred.ownerId, VerifierProfile.regulator);
+}

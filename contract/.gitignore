@@ -1,0 +1,7 @@
+node_modules/
+src/managed/
+e2e/.state/
+e2e/report.json
+e2e/REPORT.md
+
+e2e/last-run.log
