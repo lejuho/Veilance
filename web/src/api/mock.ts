@@ -1,27 +1,27 @@
 /**
- * In-browser mock of the party agent (agent/API.md). Simulates the real timing shape:
- * jobs go queued → preparing → proving → submitting → confirmed | rejected.
- * State is persisted in localStorage so a demo survives a reload.
+ * In-browser mock of the party agent (agent/API.md). Same timing shape as the real one:
+ * jobs go queued → preparing → proving → submitting → confirmed | rejected, one at a time.
+ * State is persisted in localStorage so a reload keeps the chain.
  */
 import type { VeilanceApi } from './client';
-import { staticDisclosure } from './disclosure';
-import { PARTIES, PROFILE_CODE } from '@/lib/registry';
+import { CHAIN, PARTIES, PROFILE_CODE } from '@/lib/registry';
 import {
   ApiError,
   type Challenge,
   type Circuit,
   type Credential,
+  type GraphEdge,
   type Job,
   type JobStage,
-  type LedgerTx,
   type PartyName,
   type Profile,
   type VerifyPredicate,
   type VerifyResult,
 } from './types';
 
-const STORAGE_KEY = 'veilance.mock.v1';
-const ALL_PARTIES: PartyName[] = ['admin', 'mine', 'refiner', 'batteryMfr'];
+const STORAGE_KEY = 'veilance.mock.v3';
+const ALL: PartyName[] = ['admin', 'mine', 'refiner', 'batteryMfr'];
+const BLOCK_MS = 6000;
 const MATERIAL_LABEL: Record<string, string> = {
   cobalt: 'Cobalt',
   lithium: 'Lithium',
@@ -29,8 +29,8 @@ const MATERIAL_LABEL: Record<string, string> = {
   graphite: 'Graphite',
   manganese: 'Manganese',
 };
-
-// ---------- deterministic-ish hex helpers (not cryptographic; this is a mock) ----------
+/** Same encoding as agent/registry.json's default origin. */
+const ORIGIN_ID = '7665696c616e63652d6167656e743a6f726967696e3a6472632d6d696e652d78';
 
 function randomHex(bytes = 32): string {
   const a = new Uint8Array(bytes);
@@ -38,7 +38,7 @@ function randomHex(bytes = 32): string {
   return Array.from(a, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** FNV-1a expanded to 32 bytes. Stable for attestation keys / partyIds. */
+/** FNV-1a expanded to 32 bytes. Stable for attestation keys / party ids. Not cryptographic. */
 function fakeHash(...parts: (string | number)[]): string {
   const s = parts.join('|');
   let out = '';
@@ -53,29 +53,32 @@ function fakeHash(...parts: (string | number)[]): string {
   return out;
 }
 
-const PARTY_ID: Record<PartyName, string> = {
-  admin: fakeHash('veilance:id', 'admin'),
-  mine: fakeHash('veilance:id', 'mine'),
-  refiner: fakeHash('veilance:id', 'refiner'),
-  batteryMfr: fakeHash('veilance:id', 'batteryMfr'),
-};
-const CERT_ID: Record<PartyName, string> = {
-  admin: fakeHash('cert', 'admin'),
-  mine: fakeHash('cert', 'mine'),
-  refiner: fakeHash('cert', 'refiner'),
-  batteryMfr: fakeHash('cert', 'batteryMfr'),
-};
+const PARTY_ID = Object.fromEntries(ALL.map((p) => [p, fakeHash('veilance:id', p)])) as Record<PartyName, string>;
+const CERT_ID = Object.fromEntries(ALL.map((p) => [p, fakeHash('cert', p)])) as Record<PartyName, string>;
 
-// ---------- persisted state ----------
-
-interface InboxEntry {
-  index: number;
-  recipient: PartyName;
-  issuedBy: PartyName;
-  cred: Omit<Credential, 'id' | 'status' | 'receivedAt'>;
-  delivered: boolean;
+interface Tx {
+  txHash: string;
+  blockHeight: number;
+  circuit: Circuit;
+  party: PartyName;
+  timestamp: string;
+  jobId: string;
 }
-
+interface Lot extends GraphEdge {
+  originId: string;
+  materialType: string;
+}
+interface Attestation {
+  holder: PartyName;
+  profile: Profile;
+  attestationKey: string;
+  policyVersion: string;
+  txHash: string;
+  blockHeight: number;
+  challenge: string;
+  createdAt: string;
+  nullifier?: string;
+}
 interface MockState {
   contractAddress: string;
   genesisAt: number;
@@ -85,37 +88,71 @@ interface MockState {
   origins: { originId: string; label: string }[];
   suppliers: { partyId: string; certId: string; label: string; partyName: PartyName }[];
   encKeys: Partial<Record<PartyName, string>>;
-  leaves: string[];
-  nullifiers: string[];
-  attestations: Record<string, { profile: Profile; policyVersion: string; nullifier?: string }>;
-  inbox: InboxEntry[];
-  creds: Record<PartyName, Credential[]>;
-  lastSeen: Record<PartyName, number>;
+  lots: Lot[];
+  attestations: Attestation[];
   jobs: Job[];
   challenges: Challenge[];
-  txs: LedgerTx[];
+  txs: Tx[];
 }
 
-function fresh(): MockState {
-  return {
+/** A chain that already has policy v5: one origin, three certified organisations, threshold 5, four keys. */
+function seed(): MockState {
+  const genesisAt = Date.now();
+  const baseHeight = 1400 + Math.floor(Math.random() * 60);
+  const S: MockState = {
     contractAddress: '0200' + randomHex(30),
-    genesisAt: Date.now(),
-    baseHeight: 1180 + Math.floor(Math.random() * 40),
+    genesisAt,
+    baseHeight,
     policyVersion: 0,
     carbonThreshold: 0,
     origins: [],
     suppliers: [],
     encKeys: {},
-    leaves: [],
-    nullifiers: [],
-    attestations: {},
-    inbox: [],
-    creds: { admin: [], mine: [], refiner: [], batteryMfr: [] },
-    lastSeen: { admin: 0, mine: 0, refiner: 0, batteryMfr: 0 },
+    lots: [],
+    attestations: [],
     jobs: [],
     challenges: [],
     txs: [],
   };
+  let h = baseHeight - 640;
+  const past = (party: PartyName, circuit: Circuit, result: Record<string, unknown>, apply: () => void) => {
+    h += 3 + Math.floor(Math.random() * 9);
+    const t = new Date(genesisAt - (baseHeight - h) * BLOCK_MS).toISOString();
+    const job: Job = {
+      id: 'job_' + randomHex(6),
+      party,
+      circuit,
+      stage: 'confirmed',
+      startedAt: t,
+      finishedAt: t,
+      elapsedMs: 31000 + Math.floor(Math.random() * 9000),
+      txHash: randomHex(32),
+      blockHeight: h,
+      result,
+    };
+    S.jobs.unshift(job);
+    S.txs.unshift({ txHash: job.txHash!, blockHeight: h, circuit, party, timestamp: t, jobId: job.id });
+    apply();
+  };
+  past('admin', 'deploy', { contractAddress: S.contractAddress }, () => {});
+  past('admin', 'certifyOrigin', { originId: ORIGIN_ID, label: 'DRC Mine X' }, () => {
+    S.origins.push({ originId: ORIGIN_ID, label: 'DRC Mine X' });
+    S.policyVersion += 1;
+  });
+  for (const p of CHAIN)
+    past('admin', 'certifySupplier', { partyId: PARTY_ID[p], certId: CERT_ID[p], partyName: p }, () => {
+      S.suppliers.push({ partyId: PARTY_ID[p], certId: CERT_ID[p], label: 'Supplier certification', partyName: p });
+      S.policyVersion += 1;
+    });
+  past('admin', 'setCarbonThreshold', { carbonThreshold: 5 }, () => {
+    S.carbonThreshold = 5;
+    S.policyVersion += 1;
+  });
+  for (const p of ALL) {
+    const pk = fakeHash('x25519', p);
+    past(p, 'registerEncKey', { encPk: pk }, () => void (S.encKeys[p] = pk));
+  }
+  return S;
 }
 
 function load(): MockState {
@@ -123,11 +160,10 @@ function load(): MockState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const s = JSON.parse(raw) as MockState;
-      // Jobs interrupted by a reload: the simulated agent "restarted".
       for (const j of s.jobs) {
         if (!['confirmed', 'rejected', 'failed'].includes(j.stage)) {
           j.stage = 'failed';
-          j.error = 'mock agent restarted before this job finished';
+          j.error = 'agent restarted';
           j.finishedAt = new Date().toISOString();
         }
       }
@@ -136,13 +172,11 @@ function load(): MockState {
   } catch {
     /* ignore */
   }
-  return fresh();
+  return seed();
 }
 
-// ---------- mock ----------
-
 export function createMockApi(): VeilanceApi {
-  let S = load();
+  const S = load();
   const save = () => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(S));
@@ -156,8 +190,11 @@ export function createMockApi(): VeilanceApi {
   const ADMIN_PROVE_MS = Math.max(400, Math.round(PROVE_MS * 0.4));
 
   const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-  const blockHeight = () => S.baseHeight + Math.floor((Date.now() - S.genesisAt) / 6000);
+  const blockHeight = () => S.baseHeight + Math.floor((Date.now() - S.genesisAt) / BLOCK_MS);
+  const blockTime = (h: number) => new Date(S.genesisAt + (h - S.baseHeight) * BLOCK_MS).toISOString();
+  const blockHash = (h: number) => fakeHash('block', S.contractAddress, h);
   const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
+  const terminal = (j: Job) => ['confirmed', 'rejected', 'failed'].includes(j.stage);
 
   class Reject extends Error {}
 
@@ -166,91 +203,57 @@ export function createMockApi(): VeilanceApi {
   const originLabel = (originId: string) => S.origins.find((o) => o.originId === originId)?.label;
   const attKey = (challenge: string, holder: PartyName, profile: Profile) =>
     fakeHash('veilance:att', challenge, PARTY_ID[holder], PROFILE_CODE[profile]);
+  const nullifierOf = (commitment: string) => fakeHash('veilance:nf', commitment);
 
-  /** Circuit execution: mutate state or throw Reject (contract assert). Runs at "proving" time like a real circuit. */
-  type Exec = () => Record<string, unknown> | void;
+  // ---------- job runner: one job at a time, like the shared proof server ----------
 
+  type Check = () => { result?: Record<string, unknown>; apply: (job: Job) => void };
   let chain: Promise<void> = Promise.resolve();
 
-  function createJob(party: PartyName, circuit: Circuit): Job {
+  function run(party: PartyName, circuit: Circuit, check: Check, proveMs: number): Job {
     const job: Job = { id: 'job_' + randomHex(6), party, circuit, stage: 'queued', startedAt: new Date().toISOString() };
     S.jobs.unshift(job);
     save();
-    return job;
-  }
-
-  function setStage(job: Job, stage: JobStage) {
-    job.stage = stage;
-    save();
-  }
-
-  /** Jobs run one at a time (the real agent serialises the proof server too). */
-  function schedule(job: Job, exec: Exec, proveMs: number) {
+    const setStage = (stage: JobStage) => {
+      job.stage = stage;
+      save();
+    };
     chain = chain.then(async () => {
       const started = Date.now();
       job.startedAt = new Date(started).toISOString();
-      setStage(job, 'preparing');
+      setStage('preparing');
       await sleep(250);
-      setStage(job, 'proving');
-      let result: Record<string, unknown> | void = undefined;
-      let rejection: string | null = null;
+      setStage('proving');
+      let outcome: ReturnType<Check> | null = null;
+      let error: string | null = null;
+      let failed = false;
       try {
-        result = exec();
+        outcome = check();
       } catch (e) {
-        rejection = e instanceof Reject ? e.message : `internal: ${(e as Error).message}`;
-        if (!(e instanceof Reject)) {
-          job.stage = 'failed';
-          job.error = rejection;
-          job.finishedAt = new Date().toISOString();
-          job.elapsedMs = Date.now() - started;
-          save();
-          return;
-        }
+        error = e instanceof Reject ? e.message : `internal: ${(e as Error).message}`;
+        failed = !(e instanceof Reject);
       }
-      await sleep(proveMs);
-      if (rejection) {
-        job.stage = 'rejected';
-        job.error = rejection;
+      if (!failed) await sleep(proveMs);
+      if (error) {
+        job.stage = failed ? 'failed' : 'rejected';
+        job.error = error;
         job.finishedAt = new Date().toISOString();
         job.elapsedMs = Date.now() - started;
         save();
         return;
       }
-      setStage(job, 'submitting');
+      setStage('submitting');
       await sleep(700);
       job.txHash = randomHex(32);
       job.blockHeight = blockHeight() + 1;
-      job.result = result ?? {};
+      job.result = outcome!.result ?? {};
       job.stage = 'confirmed';
       job.finishedAt = new Date().toISOString();
       job.elapsedMs = Date.now() - started;
-      S.txs.unshift({ txHash: job.txHash, blockHeight: job.blockHeight, circuit: job.circuit, timestamp: job.finishedAt });
-      if (S.txs.length > 50) S.txs.length = 50;
-      commit(job);
+      S.txs.unshift({ txHash: job.txHash, blockHeight: job.blockHeight, circuit, party, timestamp: job.finishedAt, jobId: job.id });
+      outcome!.apply(job);
       save();
     });
-  }
-
-  /** Pending mutations are applied only after "confirmation" so the ledger never moves on a rejected job. */
-  const pending = new Map<string, () => void>();
-  function commit(job: Job) {
-    const fn = pending.get(job.id);
-    if (fn) {
-      fn();
-      pending.delete(job.id);
-    }
-  }
-  function run(party: PartyName, circuit: Circuit, check: () => { result?: Record<string, unknown>; apply: () => void }, proveMs: number): Job {
-    const job = createJob(party, circuit);
-    schedule(
-      job,
-      () => {
-        const { result, apply } = check();
-        pending.set(job.id, apply);
-        return result;
-      },
-      proveMs,
-    );
     return clone(job);
   }
 
@@ -279,7 +282,7 @@ export function createMockApi(): VeilanceApi {
       () => ({
         result: { partyId: PARTY_ID[partyName], certId: cid, partyName },
         apply: () => {
-          S.suppliers.push({ partyId: PARTY_ID[partyName], certId: cid, label: certLabel ?? 'RMI conformant / ISO 14001', partyName });
+          S.suppliers.push({ partyId: PARTY_ID[partyName], certId: cid, label: certLabel ?? 'Supplier certification', partyName });
           S.policyVersion += 1;
         },
       }),
@@ -315,16 +318,34 @@ export function createMockApi(): VeilanceApi {
     );
   }
 
-  function deliver(recipient: PartyName, issuedBy: PartyName, cred: InboxEntry['cred']) {
-    const index = S.inbox.length;
-    S.inbox.push({ index, recipient, issuedBy, cred, delivered: false });
-    return index;
+  function addLot(job: Job, from: PartyName, to: PartyName, circuit: Lot['circuit'], fields: Pick<Lot, 'originId' | 'materialType' | 'carbonClass'>) {
+    const commitment = String(job.result?.newCommitment ?? job.result?.commitment);
+    const material = fields.materialType.toLowerCase();
+    S.lots.push({
+      id: 'lot_' + commitment.slice(0, 12),
+      from,
+      to,
+      credentialId: 'cred_' + commitment.slice(0, 12),
+      commitment,
+      status: 'ISSUED',
+      circuit,
+      txHash: job.txHash,
+      blockHeight: job.blockHeight,
+      inboxIndex: S.lots.length,
+      carbonClass: fields.carbonClass,
+      materialLabel: MATERIAL_LABEL[material] ?? fields.materialType,
+      originLabel: originLabel(fields.originId),
+      createdAt: job.finishedAt ?? new Date().toISOString(),
+      jobId: job.id,
+      originId: fields.originId,
+      materialType: material,
+    });
   }
 
-  function issue(party: PartyName, input: { recipient: PartyName; originId: string; materialType: string; carbonClass: number; note?: string }): Job {
-    if (!S.encKeys[input.recipient]) throw new ApiError(`recipient ${input.recipient} has no registered encryption key`, 'NO_ENC_KEY', 400);
+  function issue(party: PartyName, input: { recipient: PartyName; originId: string; materialType: string; carbonClass: number }): Job {
+    if (!S.encKeys[input.recipient]) throw new ApiError(`${PARTIES[input.recipient].org} has no receiving key`, 'NO_ENC_KEY', 400);
     if (!Number.isInteger(input.carbonClass) || input.carbonClass < 0 || input.carbonClass > 255)
-      throw new ApiError('carbonClass must be 0..255', 'BAD_INPUT', 400);
+      throw new ApiError('carbon class must be 0..255', 'BAD_INPUT', 400);
     return run(
       party,
       'issueProvenance',
@@ -332,57 +353,42 @@ export function createMockApi(): VeilanceApi {
         if (!isCertified(party)) throw new Reject('veilance: supplier not certified');
         if (!originCertified(input.originId)) throw new Reject('veilance: origin not certified');
         const commitment = randomHex(32);
-        const material = input.materialType.toLowerCase();
         return {
-          result: { commitment, inboxIndex: S.inbox.length, recipient: input.recipient },
-          apply: () => {
-            S.leaves.push(commitment);
-            deliver(input.recipient, party, {
-              commitment,
-              originId: input.originId,
-              originLabel: originLabel(input.originId),
-              materialType: material,
-              materialLabel: MATERIAL_LABEL[material] ?? input.materialType,
-              carbonClass: input.carbonClass,
-              issuedBy: party,
-            });
-          },
+          result: { commitment, inboxIndex: S.lots.length, recipient: input.recipient },
+          apply: (job) => addLot(job, party, input.recipient, 'issueProvenance', input),
         };
       },
       PROVE_MS,
     );
   }
 
+  const heldLot = (party: PartyName, credentialId: string) => {
+    const lot = S.lots.find((l) => l.to === party && l.credentialId === credentialId && l.status !== 'ISSUED');
+    if (!lot) throw new ApiError('credential not found', 'NOT_FOUND', 404);
+    return lot;
+  };
+
   function transfer(party: PartyName, credentialId: string, input: { recipient: PartyName; carbonClass: number }): Job {
-    const cred = S.creds[party].find((c) => c.id === credentialId);
-    if (!cred) throw new ApiError('credential not found', 'NOT_FOUND', 404);
-    if (!S.encKeys[input.recipient]) throw new ApiError(`recipient ${input.recipient} has no registered encryption key`, 'NO_ENC_KEY', 400);
+    const lot = heldLot(party, credentialId);
+    if (!S.encKeys[input.recipient]) throw new ApiError(`${PARTIES[input.recipient].org} has no receiving key`, 'NO_ENC_KEY', 400);
     return run(
       party,
       'transferProvenance',
       () => {
-        const nullifier = fakeHash('veilance:nf', cred.commitment);
-        if (cred.status === 'CONSUMED' || S.nullifiers.includes(nullifier)) throw new Reject('veilance: credential already consumed');
-        if (!S.leaves.includes(cred.commitment)) throw new Reject('veilance: credential not in provenance tree');
+        const nullifier = nullifierOf(lot.commitment);
+        if (lot.status === 'CONSUMED') throw new Reject('veilance: credential already consumed');
         if (!isCertified(party)) throw new Reject('veilance: supplier not certified');
-        if (!originCertified(cred.originId)) throw new Reject('veilance: origin not certified');
-        if (input.carbonClass < cred.carbonClass) throw new Reject('veilance: carbon class must not decrease');
+        if (!originCertified(lot.originId)) throw new Reject('veilance: origin not certified');
+        if (input.carbonClass < (lot.carbonClass ?? 0)) throw new Reject('veilance: carbon class must not decrease');
         const newCommitment = randomHex(32);
         return {
-          result: { nullifier, newCommitment, inboxIndex: S.inbox.length },
-          apply: () => {
-            S.nullifiers.push(nullifier);
-            S.leaves.push(newCommitment);
-            cred.status = 'CONSUMED';
-            deliver(input.recipient, party, {
-              commitment: newCommitment,
-              originId: cred.originId,
-              originLabel: cred.originLabel,
-              materialType: cred.materialType,
-              materialLabel: cred.materialLabel,
-              carbonClass: input.carbonClass,
-              issuedBy: party,
-            });
+          result: { nullifier, newCommitment, inboxIndex: S.lots.length, recipient: input.recipient },
+          apply: (job) => {
+            lot.status = 'CONSUMED';
+            lot.nullifier = nullifier;
+            lot.consumedTxHash = job.txHash;
+            lot.consumedBlockHeight = job.blockHeight;
+            addLot(job, party, input.recipient, 'transferProvenance', { originId: lot.originId, materialType: lot.materialType, carbonClass: input.carbonClass });
           },
         };
       },
@@ -391,31 +397,38 @@ export function createMockApi(): VeilanceApi {
   }
 
   function attest(party: PartyName, credentialId: string, input: { profile: Profile; challenge: string }): Job {
-    const cred = S.creds[party].find((c) => c.id === credentialId);
-    if (!cred) throw new ApiError('credential not found', 'NOT_FOUND', 404);
-    if (!/^[0-9a-f]{64}$/i.test(input.challenge)) throw new ApiError('challenge must be 32 bytes hex', 'BAD_INPUT', 400);
+    const lot = heldLot(party, credentialId);
+    if (!/^[0-9a-f]{64}$/i.test(input.challenge)) throw new ApiError('request code must be 64 hex characters', 'BAD_INPUT', 400);
     const circuit: Circuit =
       input.profile === 'consumer' ? 'attestConsumer' : input.profile === 'procurement' ? 'attestProcurement' : 'attestRegulator';
     return run(
       party,
       circuit,
       () => {
-        const key = attKey(input.challenge.toLowerCase(), party, input.profile);
-        if (S.attestations[key]) throw new Reject('veilance: attestation already recorded for this challenge');
-        if (!S.leaves.includes(cred.commitment)) throw new Reject('veilance: credential not in provenance tree');
-        if (!originCertified(cred.originId)) throw new Reject('veilance: origin not certified');
+        const challenge = input.challenge.toLowerCase();
+        const key = attKey(challenge, party, input.profile);
+        if (S.attestations.some((a) => a.attestationKey === key)) throw new Reject('veilance: attestation already recorded');
+        if (!originCertified(lot.originId)) throw new Reject('veilance: origin not certified');
         if (input.profile !== 'consumer') {
           if (!isCertified(party)) throw new Reject('veilance: supplier not certified');
-          if (cred.carbonClass > S.carbonThreshold) throw new Reject('veilance: carbon class exceeds threshold');
+          if ((lot.carbonClass ?? 0) > S.carbonThreshold) throw new Reject('veilance: carbon class exceeds threshold');
         }
-        const nullifier = fakeHash('veilance:nf', cred.commitment);
-        if (input.profile === 'regulator' && (cred.status === 'CONSUMED' || S.nullifiers.includes(nullifier)))
-          throw new Reject('veilance: credential already consumed');
+        if (input.profile === 'regulator' && lot.status === 'CONSUMED') throw new Reject('veilance: credential already consumed');
         const policyVersion = String(S.policyVersion);
         return {
           result: { attestationKey: key, profile: input.profile, policyVersion },
-          apply: () => {
-            S.attestations[key] = { profile: input.profile, policyVersion, ...(input.profile === 'regulator' ? { nullifier } : {}) };
+          apply: (job) => {
+            S.attestations.push({
+              holder: party,
+              profile: input.profile,
+              attestationKey: key,
+              policyVersion,
+              txHash: job.txHash!,
+              blockHeight: job.blockHeight!,
+              challenge,
+              createdAt: job.finishedAt!,
+              ...(input.profile === 'regulator' ? { nullifier: nullifierOf(lot.commitment) } : {}),
+            });
           },
         };
       },
@@ -423,32 +436,36 @@ export function createMockApi(): VeilanceApi {
     );
   }
 
+  const toCredential = (l: Lot): Credential => ({
+    id: l.credentialId,
+    commitment: l.commitment,
+    originId: l.originId,
+    originLabel: l.originLabel,
+    materialType: l.materialType,
+    materialLabel: l.materialLabel,
+    carbonClass: l.carbonClass ?? 0,
+    status: l.status === 'CONSUMED' ? 'CONSUMED' : 'ACTIVE',
+    receivedAt: l.deliveredAt ?? l.createdAt,
+    inboxIndex: l.inboxIndex,
+    issuedBy: l.from,
+  });
+
   function scan(party: PartyName) {
-    const found: Credential[] = [];
-    for (const e of S.inbox) {
-      if (e.index < S.lastSeen[party]) continue;
-      if (e.recipient !== party || e.delivered) continue; // trial-decrypt fails for others
-      e.delivered = true;
-      const c: Credential = {
-        id: 'cred_' + e.cred.commitment.slice(0, 12),
-        ...e.cred,
-        status: 'ACTIVE',
-        receivedAt: new Date().toISOString(),
-        inboxIndex: e.index,
-      };
-      S.creds[party].push(c);
-      found.push(c);
+    const found = S.lots.filter((l) => l.to === party && l.status === 'ISSUED');
+    const now = new Date().toISOString();
+    for (const l of found) {
+      l.status = 'DELIVERED';
+      l.deliveredAt = now;
     }
-    S.lastSeen[party] = S.inbox.length;
     save();
-    return { found: found.length, credentials: clone(found) };
+    return { found: found.length, credentials: found.map(toCredential) };
   }
 
   function verify(challenge: string, holder: PartyName, profile: Profile): VerifyResult {
     const key = attKey(challenge.toLowerCase(), holder, profile);
-    const att = S.attestations[key];
+    const att = S.attestations.find((a) => a.attestationKey === key);
     const current = String(S.policyVersion);
-    const checks: Record<string, boolean> = {
+    const applies: Record<string, boolean> = {
       responsibleSourcing: true,
       chainOfCustody: true,
       supplierCertification: profile !== 'consumer',
@@ -458,27 +475,38 @@ export function createMockApi(): VeilanceApi {
     };
     const labels: Record<string, string> = {
       responsibleSourcing: 'Responsible sourcing',
-      chainOfCustody: 'Valid chain of custody',
+      chainOfCustody: 'Chain of custody',
       supplierCertification: 'Supplier certification',
       carbonThreshold: 'Carbon class ≤ threshold',
-      restrictedSource: 'Restricted source',
-      duplicateClaim: 'Duplicate claim',
+      restrictedSource: 'No restricted source',
+      duplicateClaim: 'No duplicate claim',
     };
     const predicates: VerifyPredicate[] = Object.keys(labels).map((k) => ({
       key: k,
       label: labels[k],
-      passed: att ? (checks[k] ? true : null) : null,
+      passed: att && applies[k] ? true : null,
     }));
     return {
       status: !att ? 'PENDING' : att.policyVersion === current ? 'PASSED' : 'STALE',
       attestation: att ? { profile: att.profile, policyVersion: att.policyVersion } : undefined,
       currentPolicyVersion: current,
       predicates,
-      private: ['Upstream supplier', 'Origin', 'Material amount', 'Commercial relationship'],
+      private: ['Upstream supplier', 'Origin', 'Quantity', 'Commercial terms'],
     };
   }
 
-  const api: VeilanceApi = {
+  const explorerTxOf = (t: Tx) => ({
+    hash: t.txHash,
+    blockHeight: t.blockHeight,
+    blockHash: blockHash(t.blockHeight),
+    timestamp: t.timestamp,
+    status: 'applied' as const,
+    contractActions: [{ address: S.contractAddress, kind: t.circuit === 'deploy' ? ('deploy' as const) : ('call' as const), entryPoint: t.circuit }],
+    party: t.party,
+    circuit: t.circuit,
+  });
+
+  return {
     mode: 'mock',
     async health() {
       return {
@@ -489,7 +517,7 @@ export function createMockApi(): VeilanceApi {
       };
     },
     async parties() {
-      return ALL_PARTIES.map((name) => ({
+      return ALL.map((name) => ({
         name,
         partyId: PARTY_ID[name],
         encPk: S.encKeys[name],
@@ -499,9 +527,6 @@ export function createMockApi(): VeilanceApi {
         dust: '250000000',
       }));
     },
-    async deploy() {
-      return { contractAddress: S.contractAddress };
-    },
     async ledger() {
       return {
         contractAddress: S.contractAddress,
@@ -509,10 +534,10 @@ export function createMockApi(): VeilanceApi {
         adminId: PARTY_ID.admin,
         policyVersion: String(S.policyVersion),
         carbonThreshold: S.carbonThreshold,
-        provenanceLeafCount: S.leaves.length,
-        nullifierCount: S.nullifiers.length,
-        attestationCount: Object.keys(S.attestations).length,
-        inboxCount: S.inbox.length,
+        provenanceLeafCount: S.lots.length,
+        nullifierCount: S.lots.filter((l) => l.status === 'CONSUMED').length,
+        attestationCount: S.attestations.length,
+        inboxCount: S.lots.length,
         encKeyCount: Object.keys(S.encKeys).length,
         certifiedOriginCount: S.origins.length,
         certifiedSupplierCount: S.suppliers.length,
@@ -523,11 +548,8 @@ export function createMockApi(): VeilanceApi {
         policyVersion: String(S.policyVersion),
         carbonThreshold: S.carbonThreshold,
         origins: clone(S.origins),
-        suppliers: S.suppliers.map((s) => ({ ...s, label: `${PARTIES[s.partyName].org} · ${s.label}` })),
+        suppliers: S.suppliers.map((s) => ({ ...s, org: PARTIES[s.partyName].org })),
       };
-    },
-    async txs() {
-      return clone(S.txs);
     },
     async job(id) {
       const j = S.jobs.find((x) => x.id === id);
@@ -538,7 +560,7 @@ export function createMockApi(): VeilanceApi {
       return clone(party ? S.jobs.filter((j) => j.party === party) : S.jobs);
     },
     async addOrigin({ label, originId }) {
-      if (originId && S.origins.some((o) => o.originId === originId)) throw new ApiError('originId already certified', 'DUPLICATE', 409);
+      if (originId && originCertified(originId)) throw new ApiError('origin already certified', 'DUPLICATE', 409);
       return certifyOrigin(label, originId);
     },
     async addSupplier({ partyName, certId, certLabel }) {
@@ -547,19 +569,11 @@ export function createMockApi(): VeilanceApi {
     async setCarbonThreshold(threshold) {
       return setThreshold(threshold);
     },
-    async bootstrap() {
-      const jobs: Job[] = [];
-      if (!S.origins.length) jobs.push(certifyOrigin('DRC Mine X'));
-      for (const p of ['mine', 'refiner', 'batteryMfr'] as PartyName[]) if (!isCertified(p)) jobs.push(certifySupplier(p));
-      jobs.push(setThreshold(5));
-      for (const p of ALL_PARTIES) if (!S.encKeys[p]) jobs.push(registerEncKey(p));
-      return { jobs };
-    },
     async registerEncKey(party) {
       return registerEncKey(party);
     },
     async credentials(party) {
-      return clone(S.creds[party]);
+      return S.lots.filter((l) => l.to === party && l.status !== 'ISSUED').map(toCredential);
     },
     async scan(party) {
       await sleep(600);
@@ -574,9 +588,6 @@ export function createMockApi(): VeilanceApi {
     async attest(party, id, input) {
       return attest(party, id, input);
     },
-    async disclosurePreview(_party, op, profile) {
-      return staticDisclosure(op, profile);
-    },
     async createChallenge({ profile, holder }) {
       const challenge = randomHex(32);
       const c: Challenge = { challenge, attestationKey: attKey(challenge, holder, profile), profile, holder, createdAt: new Date().toISOString() };
@@ -587,14 +598,82 @@ export function createMockApi(): VeilanceApi {
     async challenges() {
       return clone(S.challenges);
     },
+    async openRequests(holder) {
+      return clone(S.challenges.filter((c) => c.holder === holder && !S.attestations.some((a) => a.attestationKey === c.attestationKey)));
+    },
     async verify(challenge, holder, profile) {
       return verify(challenge, holder, profile);
     },
-    resetMock() {
-      S = fresh();
-      pending.clear();
-      save();
+    async graph() {
+      const running = S.jobs.find((j) => !terminal(j) && j.stage !== 'queued');
+      return {
+        nodes: [
+          ...CHAIN.map((p) => ({
+            id: p,
+            org: PARTIES[p].org,
+            role: PARTIES[p].role,
+            certified: isCertified(p),
+            encKeyRegistered: !!S.encKeys[p],
+            held: S.lots.filter((l) => l.to === p && l.status === 'DELIVERED').length,
+            consumed: S.lots.filter((l) => l.to === p && l.status === 'CONSUMED').length,
+            attestations: S.attestations.filter((a) => a.holder === p).length,
+            lastActivityAt: S.jobs.find((j) => j.party === p)?.finishedAt,
+          })),
+          { id: 'verifier' as const, org: 'OEM', role: 'Verifier', certified: false, encKeyRegistered: false, held: 0, consumed: 0, attestations: S.attestations.length },
+        ],
+        edges: S.lots.map(({ originId: _o, materialType: _m, ...edge }) => clone(edge)),
+        attestations: S.attestations.map(({ nullifier: _n, ...a }) => clone(a)),
+        activeJob: running ? clone(running) : undefined,
+        queue: clone(S.jobs.filter((j) => j.stage === 'queued').reverse()),
+      };
+    },
+    async explorerTip() {
+      const h = blockHeight();
+      return { blockHeight: h, blockHash: blockHash(h), timestamp: blockTime(h) };
+    },
+    async explorerBlock(height) {
+      if (!Number.isInteger(height) || height < 0 || height > blockHeight()) throw new ApiError('block not found', 'NOT_FOUND', 404);
+      const txs = S.txs.filter((t) => t.blockHeight === height);
+      return { height, hash: blockHash(height), parentHash: blockHash(height - 1), timestamp: blockTime(height), txCount: txs.length, txHashes: txs.map((t) => t.txHash) };
+    },
+    async explorerTx(hash) {
+      const t = S.txs.find((x) => x.txHash === hash.toLowerCase());
+      if (!t) throw new ApiError('transaction not found', 'NOT_FOUND', 404);
+      return explorerTxOf(t);
+    },
+    async explorerContract() {
+      const deploy = S.txs.find((t) => t.circuit === 'deploy');
+      return {
+        address: S.contractAddress,
+        deployTxHash: deploy?.txHash,
+        deployBlockHeight: deploy?.blockHeight,
+        latestBlockHeight: blockHeight(),
+        actionCount: S.txs.length,
+        actions: S.txs.map((t) => ({
+          txHash: t.txHash,
+          blockHeight: t.blockHeight,
+          timestamp: t.timestamp,
+          kind: t.circuit === 'deploy' ? ('deploy' as const) : ('call' as const),
+          entryPoint: t.circuit,
+          party: t.party,
+          circuit: t.circuit,
+          jobId: t.jobId,
+        })),
+      };
+    },
+    async explorerLedgerRaw() {
+      return {
+        policyVersion: S.policyVersion,
+        carbonThreshold: S.carbonThreshold,
+        provenanceLeafCount: S.lots.length,
+        provenanceRoot: fakeHash('root', S.lots.length),
+        nullifierCount: S.lots.filter((l) => l.status === 'CONSUMED').length,
+        attestationCount: S.attestations.length,
+        inboxCount: S.lots.length,
+        encKeyCount: Object.keys(S.encKeys).length,
+        certifiedOriginCount: S.origins.length,
+        certifiedSupplierCount: S.suppliers.length,
+      };
     },
   };
-  return api;
 }

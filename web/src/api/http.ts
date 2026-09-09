@@ -1,6 +1,5 @@
 import type { VeilanceApi } from './client';
-import { staticDisclosure } from './disclosure';
-import { ApiError, type PartyName } from './types';
+import { ApiError, type Challenge, type PartyName } from './types';
 
 export function createHttpApi(baseUrl: string): VeilanceApi {
   const base = baseUrl.replace(/\/$/, '');
@@ -13,7 +12,7 @@ export function createHttpApi(baseUrl: string): VeilanceApi {
         headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
       });
     } catch (e) {
-      throw new ApiError(`Agent unreachable at ${base} (${(e as Error).message})`, 'NETWORK', 0);
+      throw new ApiError(`Agent unreachable at ${base}`, 'NETWORK', 0);
     }
     const text = await res.text();
     let body: unknown = null;
@@ -38,34 +37,34 @@ export function createHttpApi(baseUrl: string): VeilanceApi {
     baseUrl: base,
     health: () => req('/health'),
     parties: () => req('/parties'),
-    deploy: () => post('/deploy'),
     ledger: () => req('/ledger'),
     policy: () => req('/ledger/policy'),
-    txs: () => req('/ledger/txs'),
     job: (id) => req(`/jobs/${encodeURIComponent(id)}`),
     jobs: (party?: PartyName) => req(party ? `/jobs?party=${party}` : '/jobs'),
     addOrigin: (input) => post('/admin/origins', input),
     addSupplier: (input) => post('/admin/suppliers', input),
     setCarbonThreshold: (threshold) => post('/admin/carbon-threshold', { threshold }),
-    bootstrap: () => post('/admin/bootstrap'),
     registerEncKey: (party) => post(`/parties/${party}/enc-key`),
     credentials: (party) => req(`/parties/${party}/credentials`),
     scan: (party) => post(`/parties/${party}/scan`),
     issue: (party, input) => post(`/parties/${party}/issue`, input),
     transfer: (party, id, input) => post(`/parties/${party}/credentials/${encodeURIComponent(id)}/transfer`, input),
     attest: (party, id, input) => post(`/parties/${party}/credentials/${encodeURIComponent(id)}/attest`, input),
-    disclosurePreview: async (party, op, profile) => {
-      try {
-        const q = new URLSearchParams({ op });
-        if (profile) q.set('profile', profile);
-        return await req(`/parties/${party}/disclosure-preview?${q}`);
-      } catch {
-        return staticDisclosure(op, profile);
-      }
-    },
     createChallenge: (input) => post('/verify/challenges', input),
     challenges: () => req('/verify/challenges'),
+    openRequests: async (holder) => {
+      const list = await req<Challenge[]>(`/verify/challenges?holder=${holder}&open=true`);
+      return list
+        .filter((c) => c.holder === holder)
+        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+    },
     verify: (challenge, holder, profile) =>
       req(`/verify/${encodeURIComponent(challenge)}?holder=${holder}&profile=${profile}`),
+    graph: () => req('/graph'),
+    explorerTip: () => req('/explorer/tip'),
+    explorerBlock: (height) => req(`/explorer/block/${height}`),
+    explorerTx: (hash) => req(`/explorer/tx/${encodeURIComponent(hash)}`),
+    explorerContract: () => req('/explorer/contract'),
+    explorerLedgerRaw: () => req('/explorer/ledger-raw'),
   };
 }

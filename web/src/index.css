@@ -8,22 +8,27 @@
 html,
 body,
 #root {
-  min-height: 100%;
+  height: 100%;
 }
 body {
   @apply bg-ink-900 font-sans text-ink-100 antialiased;
   font-feature-settings: 'ss01', 'cv11', 'tnum';
+  overflow: hidden;
 }
 code,
-kbd,
 pre,
 .font-mono {
   font-variant-ligatures: none;
 }
-::selection {
-  background: rgba(110, 231, 216, 0.25);
-}
 * {
   scrollbar-width: thin;
   scrollbar-color: #2a3541 transparent;
+}
+.map-bg {
+  background-color: #0d1116;
+  background-image: radial-gradient(#1f2830 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.lock-block {
+  background: repeating-linear-gradient(90deg, #3c4a58 0 6px, #2a3541 6px 8px);
 }

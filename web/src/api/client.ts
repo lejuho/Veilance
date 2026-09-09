@@ -2,13 +2,16 @@ import type {
   AttestInput,
   Challenge,
   Credential,
-  DisclosureOp,
-  DisclosurePreview,
+  ExplorerBlock,
+  ExplorerContract,
+  ExplorerTip,
+  ExplorerTx,
+  Graph,
   Health,
   IssueInput,
   Job,
   Ledger,
-  LedgerTx,
+  LedgerRaw,
   Party,
   PartyName,
   Policy,
@@ -18,18 +21,15 @@ import type {
   VerifyResult,
 } from './types';
 
-/** Everything the UI ever calls. One implementation talks HTTP to the party agent, the other is an in-browser mock. */
+/** Everything the UI calls. One implementation talks HTTP to the party agent, the other is an in-browser mock. */
 export interface VeilanceApi {
   readonly mode: 'mock' | 'http';
   readonly baseUrl?: string;
 
   health(): Promise<Health>;
   parties(): Promise<Party[]>;
-  deploy(): Promise<Job | { contractAddress: string }>;
-
   ledger(): Promise<Ledger>;
   policy(): Promise<Policy>;
-  txs(): Promise<LedgerTx[]>;
 
   job(id: string): Promise<Job>;
   jobs(party?: PartyName): Promise<Job[]>;
@@ -37,7 +37,6 @@ export interface VeilanceApi {
   addOrigin(input: { label: string; originId?: string }): Promise<Job>;
   addSupplier(input: { partyName: PartyName; certId?: string; certLabel?: string }): Promise<Job>;
   setCarbonThreshold(threshold: number): Promise<Job>;
-  bootstrap(): Promise<{ jobs: Job[] }>;
 
   registerEncKey(party: PartyName): Promise<Job>;
   credentials(party: PartyName): Promise<Credential[]>;
@@ -45,14 +44,19 @@ export interface VeilanceApi {
   issue(party: PartyName, input: IssueInput): Promise<Job>;
   transfer(party: PartyName, credentialId: string, input: TransferInput): Promise<Job>;
   attest(party: PartyName, credentialId: string, input: AttestInput): Promise<Job>;
-  disclosurePreview(party: PartyName, op: DisclosureOp, profile?: Profile): Promise<DisclosurePreview>;
 
   createChallenge(input: { profile: Profile; holder: PartyName }): Promise<Challenge>;
   challenges(): Promise<Challenge[]>;
+  /** GET /verify/challenges?holder=&open=true — requests without an attestation yet, newest first. */
+  openRequests(holder: PartyName): Promise<Challenge[]>;
   verify(challenge: string, holder: PartyName, profile: Profile): Promise<VerifyResult>;
 
-  /** Mock only: wipe the simulated chain. */
-  resetMock?(): void;
+  graph(): Promise<Graph>;
+  explorerTip(): Promise<ExplorerTip>;
+  explorerBlock(height: number): Promise<ExplorerBlock>;
+  explorerTx(hash: string): Promise<ExplorerTx>;
+  explorerContract(): Promise<ExplorerContract>;
+  explorerLedgerRaw(): Promise<LedgerRaw>;
 }
 
 let instance: VeilanceApi | null = null;
@@ -76,6 +80,6 @@ export async function loadApi(): Promise<VeilanceApi> {
 }
 
 export function getApi(): VeilanceApi {
-  if (!instance) throw new Error('API not loaded yet — call loadApi() first');
+  if (!instance) throw new Error('API not loaded');
   return instance;
 }
