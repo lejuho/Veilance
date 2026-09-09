@@ -15,6 +15,7 @@
     "e2e:dry-run": "tsx e2e/run.ts --dry-run"
   },
   "dependencies": {
+    "@hono/node-server": "2.1.1",
     "@midnight-ntwrk/compact-js": "2.5.1",
     "@midnight-ntwrk/compact-runtime": "0.16.0",
     "@midnight-ntwrk/ledger-v8": "8.1.0",
@@ -36,6 +37,7 @@
     "@midnight-ntwrk/wallet-sdk-indexer-client": "1.2.3",
     "@midnight-ntwrk/wallet-sdk-shielded": "3.0.2",
     "@midnight-ntwrk/wallet-sdk-unshielded-wallet": "3.1.0",
+    "hono": "4.13.7",
     "rxjs": "^7.8.2",
     "ws": "^8.20.0"
   },

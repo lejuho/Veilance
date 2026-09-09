@@ -54,11 +54,33 @@ export type VeilanceProviders = MidnightProviders<
  * per-party directory (rather than a single shared LevelDB keyed only by
  * account id) explicit and inspectable.
  */
+export type BuildProvidersOptions = {
+  /**
+   * Root directory each party's LevelDB private-state directory is nested
+   * under (`<baseStateDir>/<party>`). Defaults to the e2e script's own
+   * `STATE_DIR` (`e2e/.state`). The Party Agent passes its own
+   * `agent/.state` here so its private state never collides with (or
+   * overwrites) the e2e script's — same wallet seeds, separate storage.
+   */
+  readonly baseStateDir?: string;
+  /**
+   * Account id the private state provider scopes its password-derived
+   * storage under. Defaults to the bare party name (matching the e2e
+   * script's historical behavior). The agent passes a distinct id (e.g.
+   * `agent-mine`) purely for clarity — the LevelDB directory is already
+   * isolated via `baseStateDir`.
+   */
+  readonly accountId?: string;
+};
+
 export const buildProviders = async (
   party: PartyName,
   wallet: Wallet,
+  options: BuildProvidersOptions = {},
 ): Promise<VeilanceProviders> => {
-  const partyDir = path.join(STATE_DIR, party);
+  const baseStateDir = options.baseStateDir ?? STATE_DIR;
+  const accountId = options.accountId ?? party;
+  const partyDir = path.join(baseStateDir, party);
 
   const zkConfigProvider = new NodeZkConfigProvider<VeilanceCircuitId>(ZK_CONFIG_DIR);
 
@@ -68,7 +90,7 @@ export const buildProviders = async (
 
   const privateStateProvider = levelPrivateStateProvider<VeilancePrivateStateId, VeilancePrivateState>(
     {
-      accountId: party,
+      accountId,
       privateStoragePasswordProvider: () => PRIVATE_STATE_PASSWORD,
       // `Level` (from the `level` package) structurally extends the provider's
       // own `DatabaseLevel = AbstractLevel<...>` alias, but its generic

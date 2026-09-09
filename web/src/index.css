@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+html,
+body,
+#root {
+  min-height: 100%;
+}
+body {
+  @apply bg-ink-900 font-sans text-ink-100 antialiased;
+  font-feature-settings: 'ss01', 'cv11', 'tnum';
+}
+code,
+kbd,
+pre,
+.font-mono {
+  font-variant-ligatures: none;
+}
+::selection {
+  background: rgba(110, 231, 216, 0.25);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a3541 transparent;
+}

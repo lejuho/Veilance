@@ -27,8 +27,7 @@ import { CompiledContract } from "@midnight-ntwrk/compact-js";
 import { deployContract, findDeployedContract } from "@midnight-ntwrk/midnight-js-contracts";
 import type { DeployedContract, FoundContract } from "@midnight-ntwrk/midnight-js-contracts";
 
-import { Contract, ledger as ledgerOf, pureCircuits } from "../src/managed/veilance/contract/index.js";
-import type { Ledger } from "../src/managed/veilance/contract/index.js";
+import { Contract, pureCircuits } from "../src/managed/veilance/contract/index.js";
 import {
   createVeilancePrivateState,
   forHold,
@@ -59,12 +58,9 @@ import {
 import { checkDevnetHealth, formatHealthReport } from "./lib/health.js";
 import { checkZkBuild } from "./lib/zk.js";
 import { buildWallet, fundFromGenesis, ensureDust, waitForSync, type Wallet } from "./lib/wallet.js";
-import {
-  buildProviders,
-  VEILANCE_PRIVATE_STATE_ID,
-  type VeilanceProviders,
-} from "./lib/providers.js";
+import { buildProviders, VEILANCE_PRIVATE_STATE_ID } from "./lib/providers.js";
 import { Report } from "./lib/report.js";
+import { setPrivateState, currentLedger, snapshotLedger, type Party } from "./lib/party.js";
 
 const DRY_RUN = process.argv.includes("--dry-run");
 
@@ -212,36 +208,6 @@ const runDryRun = async (): Promise<void> => {
 // ---------------------------------------------------------------------------
 // Full run — against a live devnet.
 // ---------------------------------------------------------------------------
-
-type Party = {
-  readonly name: PartyName;
-  readonly wallet: Wallet;
-  readonly providers: VeilanceProviders;
-  readonly enc: EncKeypair;
-  privateState: VeilancePrivateState;
-};
-
-const setPrivateState = async (party: Party, state: VeilancePrivateState): Promise<void> => {
-  party.privateState = state;
-  await party.providers.privateStateProvider.set(VEILANCE_PRIVATE_STATE_ID, state);
-};
-
-const currentLedger = async (providers: VeilanceProviders, address: string): Promise<Ledger> => {
-  const state = await providers.publicDataProvider.queryContractState(address);
-  if (state === null) throw new Error(`contract ${address} not found`);
-  return ledgerOf(state.data);
-};
-
-const snapshotLedger = (l: Ledger) => ({
-  adminId: Buffer.from(l.adminId).toString("hex"),
-  policyVersion: l.policyVersion.toString(),
-  carbonThreshold: l.carbonThreshold.toString(),
-  provenanceLeafCount: l.provenanceTree.firstFree().toString(),
-  nullifierCount: l.nullifiers.size().toString(),
-  attestationCount: l.attestations.size().toString(),
-  encKeyCount: l.partyEncKeys.size().toString(),
-  inboxCount: l.credentialInboxCount.toString(),
-});
 
 const runFull = async (): Promise<void> => {
   const report = new Report();

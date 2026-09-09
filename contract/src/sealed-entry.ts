@@ -312,6 +312,14 @@ export type InboxLedger = Pick<Ledger, "credentialInbox" | "credentialInboxCount
 export type ScanResult = {
   /** Credentials recovered from this scan, in inbox order. */
   readonly credentials: Credential[];
+  /**
+   * The inbox ordinal each entry of {@link credentials} was recovered from,
+   * same length and order (`inboxIndices[i]` is where `credentials[i]` came
+   * from). Added for callers (the Party Agent) that need to record where a
+   * credential was delivered; existing callers that only read `credentials`
+   * / `nextIndex` are unaffected.
+   */
+  readonly inboxIndices: bigint[];
   /** Where to resume next time. Persist this to avoid rescanning. */
   readonly nextIndex: bigint;
 };
@@ -348,6 +356,7 @@ export const scanInbox = (
 ): ScanResult => {
   const end = ledger.credentialInboxCount;
   const credentials: Credential[] = [];
+  const inboxIndices: bigint[] = [];
 
   for (let i = fromIndex; i < end; i += 1n) {
     if (!ledger.credentialInbox.member(i)) continue;
@@ -366,7 +375,8 @@ export const scanInbox = (
     if (ledger.provenanceTree.findPathForLeaf(opened.commitment) === undefined) continue;
 
     credentials.push(candidate);
+    inboxIndices.push(i);
   }
 
-  return { credentials, nextIndex: end };
+  return { credentials, inboxIndices, nextIndex: end };
 };
