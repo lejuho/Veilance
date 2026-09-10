@@ -86,6 +86,15 @@ export const GENESIS_WALLET_SEED = FUNDER_SEED;
 // The dev-preset genesis wallet holds 250_000_000_000_000 NIGHT (5 UTxOs of
 // 50_000_000_000_000, verified against the running devnet on 2026-09-09).
 // 4 parties x 40_000_000_000_000 = 160_000_000_000_000 leaves headroom for fees.
+/**
+ * When true, every party uses the funder wallet to pay fees instead of its own
+ * wallet. A party's on-chain identity is the partySecret proven inside the
+ * circuits, not the wallet, so this changes nothing in the protocol — it only
+ * links all fee payments to one address. Default on public networks, where a
+ * fresh wallet's first sync takes hours per wallet; off on the local devnet.
+ */
+export const SHARED_FEE_WALLET = env("VEILANCE_SHARED_FEE_WALLET", IS_LOCAL_DEVNET ? "0" : "1") === "1";
+
 export const FUNDING_AMOUNT = BigInt(env("VEILANCE_FUNDING_AMOUNT", IS_LOCAL_DEVNET ? "40000000000000" : "1000000000"));
 
 /** Private-state store password. Local e2e only — never a real secret. */
