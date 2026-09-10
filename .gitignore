@@ -1,0 +1,13 @@
+# Local-only service and planning documents excluded from the remote repository
+/agent/
+/CODEBASE_MAP.md
+/CONTRACT_DESIGN.md
+/ERD.md
+/landing.md
+/spec.md
+/compact_medium.md
+/template_spec.md
+
+# Local editor and agent settings
+/.agents/
+/.codex/
