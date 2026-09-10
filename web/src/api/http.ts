@@ -60,7 +60,7 @@ export function createHttpApi(baseUrl: string): VeilanceApi {
     },
     verify: (challenge, holder, profile) =>
       req(`/verify/${encodeURIComponent(challenge)}?holder=${holder}&profile=${profile}`),
-    graph: () => req('/graph'),
+    graph: (viewer = 'batteryMfr') => req(`/graph?viewer=${viewer}`),
     explorerTip: () => req('/explorer/tip'),
     explorerBlock: (height) => req(`/explorer/block/${height}`),
     explorerTx: (hash) => req(`/explorer/tx/${encodeURIComponent(hash)}`),

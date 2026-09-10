@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import type { NodeId, PartyName, Profile } from '@/api/types';
 
 /** L3 display data — names never go on chain. Mirrors agent/registry.json. */
@@ -24,7 +25,21 @@ export const PROFILES: { id: Profile; label: string }[] = [
   { id: 'procurement', label: 'Procurement' },
   { id: 'regulator', label: 'Regulator' },
 ];
-export const profileLabel = (p: Profile) => PROFILES.find((x) => x.id === p)?.label ?? p;
+export const profileLabel = (p: Profile) => t(PROFILES.find((x) => x.id === p)?.label ?? p);
 export const PROFILE_CODE: Record<Profile, number> = { consumer: 1, procurement: 2, regulator: 3 };
 
 export const PRIVATE_ROWS = ['Upstream supplier', 'Origin', 'Quantity', 'Commercial terms'];
+
+export const PROFILE_HELP: Record<Profile, string> = {
+  consumer: 'Checks certified origin and a valid provenance record. Does not check carbon or whether the lot was already used.',
+  procurement: 'Adds supplier certification and the carbon limit to the origin and provenance checks. Does not check whether the lot was already used.',
+  regulator: 'Adds a check that the lot has not been consumed. Publishes a lot identifier (nullifier) that can be used to track its consumed state.',
+};
+export const CHECK_HELP: Record<string, string> = {
+  responsibleSourcing: 'The origin belongs to the policy’s approved origins.',
+  chainOfCustody: 'The private provenance record belongs to the recorded history.',
+  supplierCertification: 'The supplier satisfies the policy’s certification check.',
+  carbonThreshold: 'The carbon class is at or below the limit in the proof’s policy version. The actual value stays private.',
+  restrictedSource: 'The origin passes the approved-origin check; this is not a separate sanctions screening.',
+  duplicateClaim: 'The lot was not consumed when this proof was made.',
+};

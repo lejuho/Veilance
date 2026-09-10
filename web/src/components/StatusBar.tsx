@@ -1,3 +1,4 @@
+import { t, useI18n } from '@/lib/i18n';
 import { useEffect, useState } from 'react';
 import { getApi } from '@/api/client';
 import { useGraph, useJob } from '@/hooks/queries';
@@ -6,6 +7,7 @@ import { cx, reason } from '@/lib/format';
 import { STAGE_WORD, elapsedMs, expectedMs, isActive } from '@/lib/progress';
 
 export function StatusBar() {
+  useI18n();
   const graph = useGraph();
   const active = graph.data?.activeJob;
   const queue = graph.data?.queue ?? [];
@@ -22,22 +24,22 @@ export function StatusBar() {
   }, []);
 
   const job = current ?? last.data;
-  let text = 'Idle';
+  let text = t("Idle");
   let tone = 'text-ink-300';
   let pct: number | null = null;
   let over = false;
   if (graph.isError) {
-    text = 'Agent unreachable';
+    text = t("Agent unreachable");
     tone = 'text-red';
   } else if (job && isActive(job)) {
     const ms = elapsedMs(job, now);
     const exp = expectedMs(getApi().mode);
-    text = `${STAGE_WORD[job.stage]} · ${bus.label(job)} · ${Math.floor(ms / 1000)} s`;
+    text = `${t(STAGE_WORD[job.stage])} · ${bus.label(job)} · ${Math.floor(ms / 1000)} ${t("seconds")}`;
     tone = 'text-amber';
     pct = Math.min(1, ms / exp);
     over = ms > exp;
   } else if (job?.finishedAt && now - Date.parse(job.finishedAt) < (job.stage === 'confirmed' ? 5000 : 8000)) {
-    text = job.stage === 'confirmed' ? `Confirmed · block ${job.blockHeight}` : `${STAGE_WORD[job.stage]} · ${reason(job.error)}`;
+    text = job.stage === 'confirmed' ? t("Confirmed · block {height}", { height: job.blockHeight ?? "—" }) : `${t(STAGE_WORD[job.stage])} · ${reason(job.error)}`;
     tone = job.stage === 'confirmed' ? 'text-accent' : 'text-red';
   }
   const queued = active ? queue.length : Math.max(0, queue.length - 1);
@@ -50,7 +52,7 @@ export function StatusBar() {
         />
       )}
       <span className={cx('tabular-nums', tone)}>{text}</span>
-      {queued > 0 && <span className="ml-auto text-ink-400">+{queued} queued</span>}
+      {queued > 0 && <span className="ml-auto text-ink-400">+{queued} {t("Queued")}</span>}
     </footer>
   );
 }

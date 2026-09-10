@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import type { EdgeStatus, GraphEdge, PartyName } from '@/api/types';
 import { CHAIN } from './registry';
 
@@ -12,11 +13,11 @@ export function lotNumber(edges: GraphEdge[], id: string): number {
 /** Material labels arrive as free text from the agent ('cobalt', 'Cobalt'); show them Title-cased. */
 export const materialName = (lot: GraphEdge) => {
   const m = lot.materialLabel?.trim();
-  return m ? m.charAt(0).toUpperCase() + m.slice(1) : 'Lot';
+  return t(m ? m.charAt(0).toUpperCase() + m.slice(1) : 'Lot');
 };
-export const lotTitle = (edges: GraphEdge[], lot: GraphEdge) => `${materialName(lot)} · lot ${lotNumber(edges, lot.id)}`;
+export const lotTitle = (edges: GraphEdge[], lot: GraphEdge) => `${materialName(lot)} · ${t('Lot')} ${lotNumber(edges, lot.id)}`;
 
-export const STATUS_WORD: Record<EdgeStatus, string> = { ISSUED: 'Issued', DELIVERED: 'Delivered', CONSUMED: 'Consumed' };
+export const STATUS_WORD: Record<EdgeStatus, string> = { ISSUED: 'Awaiting receipt', DELIVERED: 'Held', CONSUMED: 'Used in transfer' };
 
 /** Which gap between two consecutive cards a lot sits in (0 = mine→refiner, 1 = refiner→battery maker). */
 export function slotOf(lot: GraphEdge): number {

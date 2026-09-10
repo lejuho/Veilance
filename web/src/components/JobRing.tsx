@@ -1,3 +1,4 @@
+import { t, useI18n } from '@/lib/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { getApi } from '@/api/client';
 import type { Job } from '@/api/types';
@@ -7,6 +8,7 @@ import { STAGE_WORD, elapsedMs, expectedMs, isActive } from '@/lib/progress';
 import { Explore } from './ui';
 
 export function Ring({ pct, over, seconds, size = 36 }: { pct: number; over: boolean; seconds: number; size?: number }) {
+  useI18n();
   const r = size / 2 - 3;
   const c = 2 * Math.PI * r;
   return (
@@ -33,6 +35,7 @@ export function Ring({ pct, over, seconds, size = 36 }: { pct: number; over: boo
 
 /** Renders in place of an action button: ring + one word while running, then the confirmed or rejected line. */
 export function JobRing({ jobId, initial, onTerminal }: { jobId: string; initial?: Job; onTerminal?: (job: Job) => void }) {
+  useI18n();
   const q = useJob(jobId, initial);
   const job = q.data ?? initial;
   const active = isActive(job);
@@ -56,19 +59,19 @@ export function JobRing({ jobId, initial, onTerminal }: { jobId: string; initial
     return (
       <div className="flex h-9 items-center gap-3" role="status">
         <Ring pct={ms / exp} over={ms > exp} seconds={Math.floor(ms / 1000)} />
-        <span className="text-sm text-amber">{STAGE_WORD[job.stage]}</span>
+        <span className="text-sm text-amber">{t(STAGE_WORD[job.stage])}</span>
       </div>
     );
   }
   if (job.stage === 'confirmed')
     return (
       <div className="flex h-9 items-center gap-2 text-sm text-accent" role="status">
-        Confirmed · block {job.blockHeight} <Explore tx={job.txHash} className="text-accent" />
+        {t("Confirmed · block")}{job.blockHeight} <Explore tx={job.txHash} className="text-accent" />
       </div>
     );
   return (
     <div className="flex min-h-9 items-center text-sm text-red" role="alert">
-      {job.stage === 'rejected' ? `Rejected by contract — ${reason(job.error)}` : `Failed — ${reason(job.error)}`}
+      {job.stage === 'rejected' ? t("Rejected by contract — {reason}", { reason: reason(job.error) }) : t("Failed — {reason}", { reason: reason(job.error) })}
     </div>
   );
 }

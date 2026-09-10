@@ -1,3 +1,4 @@
+import { t, useI18n } from '@/lib/i18n';
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useExplorerBlock, useExplorerContract, useExplorerTx, useLedgerRaw } from '@/hooks/queries';
@@ -5,20 +6,21 @@ import { cx, fmtTime, shortHex } from '@/lib/format';
 import { orgName } from '@/lib/registry';
 import { Hash, Row } from './ui';
 
-type Kind = 'tx' | 'block' | 'contract';
+type Kind = 'tx' | "block" | "contract";
 
 // External explorer links. Per-kind templates win; VITE_EXPLORER_URL_TEMPLATE is
 // the single-template fallback. Placeholders: {hash} {height} {address}.
 // Preprod example: VITE_EXPLORER_TX_URL=https://preprod.midnightexplorer.com/transactions/0x{hash}
 function external(kind: Kind, value: string | undefined): string | null {
   const env = import.meta.env as Record<string, string | undefined>;
-  const perKind = kind === 'tx' ? env.VITE_EXPLORER_TX_URL : kind === 'block' ? env.VITE_EXPLORER_BLOCK_URL : env.VITE_EXPLORER_CONTRACT_URL;
+  const perKind = kind === 'tx' ? env.VITE_EXPLORER_TX_URL : kind === "block" ? env.VITE_EXPLORER_BLOCK_URL : env.VITE_EXPLORER_CONTRACT_URL;
   const t = perKind ?? env.VITE_EXPLORER_URL_TEMPLATE;
   if (!t || !value) return null;
   return t.replace('{hash}', value).replace('{height}', value).replace('{address}', value);
 }
 
 function TxView({ hash }: { hash: string }) {
+  useI18n();
   const q = useExplorerTx(hash);
   const loc = useLocation();
   const tx = q.data;
@@ -27,9 +29,9 @@ function TxView({ hash }: { hash: string }) {
   const action = tx.contractActions[0];
   return (
     <>
-      <Row k="Hash" v={<Hash value={tx.hash} full />} />
+      <Row k={t("Hash")} v={<Hash value={tx.hash} full />} />
       <Row
-        k="Block"
+        k={t("Block")}
         v={
           <>
             <Link to={{ pathname: `/explorer/block/${tx.blockHeight}`, search: loc.search }} className="font-mono text-xs text-ink-100 hover:text-accent">
@@ -40,7 +42,7 @@ function TxView({ hash }: { hash: string }) {
         }
       />
       <Row
-        k="Contract"
+        k={t("Contract")}
         v={
           <>
             <Link to={{ pathname: '/explorer/contract', search: loc.search }} className="font-mono text-xs text-ink-100 hover:text-accent">
@@ -61,6 +63,7 @@ function TxView({ hash }: { hash: string }) {
 }
 
 function BlockView({ height }: { height: number }) {
+  useI18n();
   const q = useExplorerBlock(height);
   const loc = useLocation();
   const b = q.data;
@@ -68,9 +71,9 @@ function BlockView({ height }: { height: number }) {
   if (!b) return <p className="text-[13px] text-ink-500">…</p>;
   return (
     <>
-      <Row k="Hash" v={<Hash value={b.hash} full />} />
-      <Row k="Time" v={fmtTime(b.timestamp)} />
-      <Row k="Transactions" v={b.txCount} />
+      <Row k={t("Hash")} v={<Hash value={b.hash} full />} />
+      <Row k={t("Time")} v={fmtTime(b.timestamp)} />
+      <Row k={t("Transactions")} v={b.txCount} />
       <div className="mt-1 space-y-1">
         {b.txHashes.map((h) => (
           <Link key={h} to={{ pathname: `/explorer/tx/${h}`, search: loc.search }} className="block font-mono text-xs text-ink-200 hover:text-accent">
@@ -84,44 +87,45 @@ function BlockView({ height }: { height: number }) {
 }
 
 function ContractView() {
-  const [tab, setTab] = useState<'contract' | 'ledger'>('contract');
+  useI18n();
+  const [tab, setTab] = useState<"contract" | 'ledger'>("contract");
   const c = useExplorerContract(true);
   const l = useLedgerRaw(tab === 'ledger');
   const loc = useLocation();
   return (
     <>
       <div className="mb-3 flex gap-1 border-b border-ink-700 text-[13px]">
-        {(['contract', 'ledger'] as const).map((t) => (
+        {(["contract", 'ledger'] as const).map((tabId) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={cx('-mb-px border-b-2 px-3 py-1.5 capitalize', tab === t ? 'border-accent text-ink-100' : 'border-transparent text-ink-400 hover:text-ink-200')}
+            key={tabId}
+            onClick={() => setTab(tabId)}
+            className={cx('-mb-px border-b-2 px-3 py-1.5 capitalize', tab === tabId ? 'border-accent text-ink-100' : 'border-transparent text-ink-400 hover:text-ink-200')}
           >
-            {t}
+            {t(tabId)}
           </button>
         ))}
       </div>
-      {tab === 'contract' &&
+      {tab === "contract" &&
         (c.isError ? (
           <p className="text-[13px] text-red">{c.error.message}</p>
         ) : !c.data ? (
           <p className="text-[13px] text-ink-500">…</p>
         ) : (
           <>
-            <Row k="Address" v={<Hash value={c.data.address} full />} />
+            <Row k={t("Address")} v={<Hash value={c.data.address} full />} />
             <Row
-              k="Deployed"
+              k={t("Deployed")}
               v={
                 c.data.deployBlockHeight != null ? (
                   <Link to={{ pathname: `/explorer/block/${c.data.deployBlockHeight}`, search: loc.search }} className="font-mono text-xs hover:text-accent">
-                    block {c.data.deployBlockHeight}
+                    {"block"}{c.data.deployBlockHeight}
                   </Link>
                 ) : (
                   '—'
                 )
               }
             />
-            <Row k="Actions" v={c.data.actionCount} />
+            <Row k={t("Actions")} v={c.data.actionCount} />
             <div className="mt-1 max-h-64 divide-y divide-ink-700/60 overflow-y-auto rounded-md border border-ink-700">
               {c.data.actions.map((a) => (
                 <Link
@@ -156,16 +160,18 @@ function ContractView() {
 }
 
 function Raw({ data }: { data: unknown }) {
+  useI18n();
   return (
     <details className="mt-3 text-[12px]">
-      <summary className="cursor-pointer select-none text-ink-400">Raw</summary>
+      <summary className="cursor-pointer select-none text-ink-400">{t("Raw")}</summary>
       <pre className="mt-2 max-h-56 overflow-auto rounded-md border border-ink-700 bg-ink-900 p-3 font-mono text-[11px] text-ink-200">{JSON.stringify(data, null, 2)}</pre>
     </details>
   );
 }
 
 export function ExplorerModal({ kind, value, onClose }: { kind: Kind; value?: string; onClose: () => void }) {
-  const title = kind === 'tx' ? 'Transaction' : kind === 'block' ? `Block ${value}` : 'Contract';
+  useI18n();
+  const title = kind === 'tx' ? t("Transaction") : kind === "block" ? t("Block {height}", { height: value ?? "—" }) : t("Contract");
   const ext = external(kind, value);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/70 p-4 backdrop-blur-sm" onMouseDown={onClose} role="dialog" aria-modal>
@@ -175,18 +181,17 @@ export function ExplorerModal({ kind, value, onClose }: { kind: Kind; value?: st
           <div className="flex items-center gap-4">
             {ext && (
               <a href={ext} target="_blank" rel="noreferrer" className="text-xs text-ink-300 hover:text-accent">
-                Open in external explorer ↗
-              </a>
+                {t("Open in external explorer ↗")}</a>
             )}
-            <button onClick={onClose} className="text-ink-400 hover:text-ink-100" aria-label="Close">
+            <button onClick={onClose} className="text-ink-400 hover:text-ink-100" aria-label={t("Close")}>
               ✕
             </button>
           </div>
         </header>
         <div className="p-5">
           {kind === 'tx' && value && <TxView hash={value} />}
-          {kind === 'block' && value && <BlockView height={Number(value)} />}
-          {kind === 'contract' && <ContractView />}
+          {kind === "block" && value && <BlockView height={Number(value)} />}
+          {kind === "contract" && <ContractView />}
         </div>
       </div>
     </div>

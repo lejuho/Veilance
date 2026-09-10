@@ -1,3 +1,4 @@
+import { useWorkspace } from '@/lib/workspace';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getApi } from '@/api/client';
 import type { Job, PartyName, Profile } from '@/api/types';
@@ -25,9 +26,10 @@ export function useTip() {
 }
 /** Every 5 s; every 1 s while a job runs so the seconds tick. */
 export function useGraph() {
+  const viewer = useWorkspace();
   return useQuery({
-    queryKey: qk.graph,
-    queryFn: () => getApi().graph(),
+    queryKey: [...qk.graph, viewer],
+    queryFn: () => getApi().graph(viewer),
     refetchInterval: (q) => (q.state.data?.activeJob || q.state.data?.queue.length || bus.hasActive() ? 1_000 : 5_000),
     retry: 0,
   });
@@ -39,7 +41,8 @@ export function usePolicy() {
   return useQuery({ queryKey: qk.policy, queryFn: () => getApi().policy(), refetchInterval: 5_000 });
 }
 export function useJobs() {
-  return useQuery({ queryKey: qk.jobs, queryFn: () => getApi().jobs(), refetchInterval: 5_000 });
+  const viewer = useWorkspace();
+  return useQuery({ queryKey: [...qk.jobs, viewer], queryFn: () => viewer === 'verifier' ? Promise.resolve([]) : getApi().jobs(viewer === 'admin' ? undefined : viewer), refetchInterval: 5_000 });
 }
 /** Polls one job every 1 s until it ends, then refreshes everything it could have changed. */
 export function useJob(id: string | null | undefined, initial?: Job) {

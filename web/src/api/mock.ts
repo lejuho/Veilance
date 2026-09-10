@@ -1,3 +1,4 @@
+import { scopeGraph } from '../../../shared/graphScope';
 /**
  * In-browser mock of the party agent (agent/API.md). Same timing shape as the real one:
  * jobs go queued → preparing → proving → submitting → confirmed | rejected, one at a time.
@@ -604,9 +605,9 @@ export function createMockApi(): VeilanceApi {
     async verify(challenge, holder, profile) {
       return verify(challenge, holder, profile);
     },
-    async graph() {
+    async graph(viewer = 'batteryMfr') {
       const running = S.jobs.find((j) => !terminal(j) && j.stage !== 'queued');
-      return {
+      return scopeGraph({
         nodes: [
           ...CHAIN.map((p) => ({
             id: p,
@@ -621,11 +622,11 @@ export function createMockApi(): VeilanceApi {
           })),
           { id: 'verifier' as const, org: 'OEM', role: 'Verifier', certified: false, encKeyRegistered: false, held: 0, consumed: 0, attestations: S.attestations.length },
         ],
-        edges: S.lots.map(({ originId: _o, materialType: _m, ...edge }) => clone(edge)),
+        edges: S.lots.map(({ originId: _o, materialType: _m, ...edge }, index) => ({ ...clone(edge), lotNumber: edge.lotNumber ?? index + 1 })),
         attestations: S.attestations.map(({ nullifier: _n, ...a }) => clone(a)),
         activeJob: running ? clone(running) : undefined,
         queue: clone(S.jobs.filter((j) => j.stage === 'queued').reverse()),
-      };
+      }, viewer);
     },
     async explorerTip() {
       const h = blockHeight();

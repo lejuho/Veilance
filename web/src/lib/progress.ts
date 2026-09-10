@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import type { Circuit, Job, JobStage, PartyName } from '@/api/types';
 import { shortName } from './registry';
 
@@ -36,7 +37,7 @@ const VERB: Record<Circuit, string> = {
 
 /** `transfer EuroRefine → VoltCell` when the recipient is known, else `transfer EuroRefine`. */
 export function jobLabel(job: Job, recipient?: PartyName | 'verifier'): string {
-  const verb = VERB[job.circuit] ?? job.circuit;
+  const verb = t(VERB[job.circuit] ?? job.circuit);
   const to = recipient ?? (job.circuit.startsWith('attest') ? 'verifier' : undefined);
   return to ? `${verb} ${shortName(job.party)} → ${shortName(to)}` : `${verb} ${shortName(job.party)}`;
 }

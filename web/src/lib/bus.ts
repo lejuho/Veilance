@@ -5,10 +5,10 @@ import { jobLabel } from './progress';
 /** Tiny shared store: labels for jobs started from a drawer, the set of jobs still running, and the lot to flash red. */
 interface BusState {
   active: string[];
-  labels: Record<string, string>;
+  recipients: Record<string, PartyName | 'verifier' | undefined>;
   flash: { lotId: string; until: number } | null;
 }
-let state: BusState = { active: [], labels: {}, flash: null };
+let state: BusState = { active: [], recipients: {}, flash: null };
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 const subscribe = (l: () => void) => {
@@ -21,7 +21,7 @@ export const bus = {
     state = {
       ...state,
       active: [...state.active, job.id],
-      labels: { ...state.labels, [job.id]: jobLabel(job, recipient) },
+      recipients: { ...state.recipients, [job.id]: recipient },
     };
     emit();
   },
@@ -41,7 +41,7 @@ export const bus = {
     }, 2000);
   },
   hasActive: () => state.active.length > 0,
-  label: (job: Job) => state.labels[job.id] ?? jobLabel(job),
+  label: (job: Job) => jobLabel(job, state.recipients[job.id]),
 };
 
 export function useBus(): BusState {

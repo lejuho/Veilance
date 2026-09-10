@@ -26,9 +26,13 @@ pre,
 }
 .map-bg {
   background-color: #0d1116;
-  background-image: radial-gradient(#1f2830 1px, transparent 1px);
-  background-size: 22px 22px;
+  background-image: radial-gradient(ellipse at center, #172029 0%, #0d1116 72%);
 }
 .lock-block {
   background: repeating-linear-gradient(90deg, #3c4a58 0 6px, #2a3541 6px 8px);
+}
+
+button:focus-visible, summary:focus-visible, a:focus-visible {
+  outline: 2px solid #86dca5;
+  outline-offset: 3px;
 }

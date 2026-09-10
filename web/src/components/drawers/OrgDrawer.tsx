@@ -1,3 +1,4 @@
+import { t, useI18n } from '@/lib/i18n';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -13,6 +14,7 @@ import { STATUS_WORD, lotNumber, newestFirst } from '@/lib/lots';
 import { CHAIN, MATERIALS, PARTIES, nextInChain } from '@/lib/registry';
 
 export function LotRow({ lot, edges }: { lot: GraphEdge; edges: GraphEdge[] }) {
+  useI18n();
   const consumed = lot.status === 'CONSUMED';
   return (
     <Link
@@ -21,16 +23,17 @@ export function LotRow({ lot, edges }: { lot: GraphEdge; edges: GraphEdge[] }) {
     >
       <span className={cx('inline-block h-2 w-2 rounded-full', lot.status === 'DELIVERED' ? 'bg-accent' : lot.status === 'ISSUED' ? 'bg-ink-400' : 'border border-ink-400')} />
       <span className={cx('flex-1', consumed && 'text-ink-400')}>
-        {lot.materialLabel ?? 'Lot'} · lot {lotNumber(edges, lot.id)} · {STATUS_WORD[lot.status]}
-        {!consumed && lot.carbonClass != null && ` · class ${lot.carbonClass}`}
+        {t(lot.materialLabel ?? "Lot")} {t("· lot")}{lotNumber(edges, lot.id)} · {t(STATUS_WORD[lot.status])}
+        {!consumed && lot.carbonClass != null && t(" · class {value}", { value: lot.carbonClass })}
       </span>
       <span className="text-ink-500">›</span>
     </Link>
   );
 }
 
-/** Check inbox: runs the scan and shows `1 new lot` or `Nothing new`. */
+/** Import newly received encrypted material records into local inventory. */
 export function CheckInbox({ party }: { party: PartyName }) {
+  useI18n();
   const qc = useQueryClient();
   const scan = useMutation({
     mutationFn: () => getApi().scan(party),
@@ -40,13 +43,14 @@ export function CheckInbox({ party }: { party: PartyName }) {
     },
   });
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex flex-wrap items-center gap-3">
       <Button variant="secondary" onClick={() => scan.mutate()} disabled={scan.isPending}>
-        Check inbox
+        {scan.isPending ? t("재료 기록 확인 중…") : t("받은 재료 확인")}
       </Button>
+      <p className="w-full text-xs leading-relaxed text-ink-400">{t("우리 회사에 전달된 재료 기록을 불러옵니다. 실제 물건의 입고를 확인하는 기능은 아닙니다.")}</p>
       {scan.data && (
-        <span className={cx('text-[13px]', scan.data.found ? 'text-accent' : 'text-ink-400')}>
-          {scan.data.found ? `${scan.data.found} new lot${scan.data.found > 1 ? 's' : ''}` : 'Nothing new'}
+        <span role="status" className={cx('text-[13px]', scan.data.found ? 'text-accent' : 'text-ink-400')}>
+          {scan.data.found ? t("Imported {count} new material records", { count: scan.data.found }) : t("새로 받은 재료 기록이 없습니다")}
         </span>
       )}
       {scan.error && <span className="text-[13px] text-red">{scan.error.message}</span>}
@@ -55,6 +59,7 @@ export function CheckInbox({ party }: { party: PartyName }) {
 }
 
 function IssueForm() {
+  useI18n();
   const policy = usePolicy();
   const parties = useParties();
   const [to, setTo] = useState<PartyName>(nextInChain('mine'));
@@ -66,7 +71,7 @@ function IssueForm() {
   const carbonN = Number(carbon);
   const action = useAction((input: Parameters<typeof api.issue>[1]) => api.issue('mine', input), () => to);
   const api = getApi();
-  const why = !policy.data?.origins.length ? 'Certify an origin in Policy first' : recipient && !recipient.encKeyRegistered ? `${PARTIES[to].org} has no receiving key` : null;
+  const why = !policy.data?.origins.length ? t("Certify an origin in Policy first") : recipient && !recipient.encKeyRegistered ? t("{company} has no receiving key", { company: PARTIES[to].org }) : null;
   const valid = !why && Number.isInteger(carbonN) && carbonN >= 0 && carbonN <= 255 && !!originId;
   return (
     <form
@@ -75,10 +80,10 @@ function IssueForm() {
         e.preventDefault();
         if (valid && !action.pending) action.run({ recipient: to, originId, materialType: material.toLowerCase(), carbonClass: carbonN });
       }}
-      onChange={() => action.job && !['queued', 'preparing', 'proving', 'submitting'].includes(action.job.stage) && action.reset()}
+      onChange={() => action.job && !["queued", 'preparing', 'proving', 'submitting'].includes(action.job.stage) && action.reset()}
     >
       <div className="grid grid-cols-2 gap-3">
-        <Field label="To">
+        <Field label={t("To")}>
           <Select value={to} onChange={(e) => setTo(e.target.value as PartyName)}>
             {CHAIN.filter((p) => p !== 'mine').map((p) => (
               <option key={p} value={p}>
@@ -87,14 +92,14 @@ function IssueForm() {
             ))}
           </Select>
         </Field>
-        <Field label="Material">
+        <Field label={t("Material")}>
           <Select value={material} onChange={(e) => setMaterial(e.target.value)}>
             {MATERIALS.map((m) => (
-              <option key={m}>{m}</option>
+              <option key={m} value={m}>{t(m)}</option>
             ))}
           </Select>
         </Field>
-        <Field label="Origin">
+        <Field label={t("Origin")}>
           <Select value={originId} onChange={(e) => setOrigin(e.target.value)}>
             {!policy.data?.origins.length && <option value="">—</option>}
             {policy.data?.origins.map((o) => (
@@ -104,7 +109,7 @@ function IssueForm() {
             ))}
           </Select>
         </Field>
-        <Field label="Carbon class">
+        <Field label={t("Carbon class")}>
           <Input type="number" min={0} max={255} value={carbon} onChange={(e) => setCarbon(e.target.value)} />
         </Field>
       </div>
@@ -113,17 +118,16 @@ function IssueForm() {
       ) : (
         <div>
           <Button type="submit" disabled={!valid || action.pending}>
-            Issue
-          </Button>
+            {t("Issue")}</Button>
           <Reason>{why}</Reason>
           <ErrorLine error={action.error} />
         </div>
       )}
       <details className="text-[12px] text-ink-400">
-        <summary className="cursor-pointer select-none">What goes on chain</summary>
+        <summary className="cursor-pointer select-none">{t("What goes on chain")}</summary>
         <ul className="mt-1 list-disc pl-5">
-          <li>one 32-byte commitment</li>
-          <li>one sealed 192-byte delivery</li>
+          <li>{t("one 32-byte commitment")}</li>
+          <li>{t("one sealed 192-byte delivery")}</li>
         </ul>
       </details>
     </form>
@@ -131,6 +135,7 @@ function IssueForm() {
 }
 
 export function OrgDrawer({ id, onClose }: { id: PartyName; onClose: () => void }) {
+  useI18n();
   const graph = useGraph();
   const parties = useParties();
   const jobs = useJobs();
@@ -147,25 +152,25 @@ export function OrgDrawer({ id, onClose }: { id: PartyName; onClose: () => void 
   const [issuing, setIssuing] = useState(false);
   useEffect(() => setIssuing(false), [id]);
   const register = useAction(() => getApi().registerEncKey(id));
-  const why = !certified ? 'Ask the policy admin to certify this organisation' : !keyed ? 'Register the receiving key first' : null;
+  const why = !certified ? t("Ask the policy admin to certify this organisation") : !keyed ? t("Register the receiving key first") : null;
 
   return (
     <Drawer
       title={node?.org ?? PARTIES[id].org}
       subtitle={
         <>
-          {node?.role ?? PARTIES[id].role} · id <Hash value={party?.partyId} />
+          {t(node?.role ?? PARTIES[id].role)} {t("· id")}<Hash value={party?.partyId} />
         </>
       }
       onClose={onClose}
     >
       <Row
-        k="Certified"
+        k={t("Certified")}
         v={
           certified ? (
             <>
               <span className="text-accent">✓</span>
-              {certJob?.blockHeight != null && <span className="text-ink-300">since block {certJob.blockHeight}</span>}
+              {certJob?.blockHeight != null && <span className="text-ink-300">{t("since block")}{certJob.blockHeight}</span>}
               <Explore tx={certJob?.txHash} />
             </>
           ) : (
@@ -174,12 +179,12 @@ export function OrgDrawer({ id, onClose }: { id: PartyName; onClose: () => void 
         }
       />
       <Row
-        k="Receiving key"
+        k={t("Receiving key")}
         v={
           keyed ? (
             <>
               <span className="text-accent">✓</span>
-              <span className="text-ink-300">registered</span>
+              <span className="text-ink-300">{t("registered")}</span>
               <Explore tx={keyJob?.txHash} />
             </>
           ) : register.job ? (
@@ -188,14 +193,13 @@ export function OrgDrawer({ id, onClose }: { id: PartyName; onClose: () => void 
             <>
               <span className="text-ink-500">—</span>
               <Button size="sm" variant="secondary" onClick={() => register.run()} disabled={register.pending}>
-                Register
-              </Button>
+                {t("Register")}</Button>
             </>
           )
         }
       />
 
-      <Heading>Lots</Heading>
+      <Heading>{t("Lots")}</Heading>
       {lots.length ? (
         <div className="-mx-1">
           {lots.map((l) => (
@@ -213,15 +217,14 @@ export function OrgDrawer({ id, onClose }: { id: PartyName; onClose: () => void 
           ) : (
             <div>
               <Button onClick={() => setIssuing(true)} disabled={!!why}>
-                Issue lot
-              </Button>
+                {t("Issue lot")}</Button>
               <Reason>{why}</Reason>
             </div>
           )
         ) : (
           <>
-            {keyed ? <CheckInbox party={id} /> : <Button variant="secondary" disabled>Check inbox</Button>}
-            <Reason>{!keyed ? 'Register the receiving key first' : null}</Reason>
+            {keyed ? <CheckInbox party={id} /> : <Button variant="secondary" disabled>{t("받은 재료 확인")}</Button>}
+            <Reason>{!keyed ? t("Register the receiving key first") : null}</Reason>
           </>
         )}
       </div>

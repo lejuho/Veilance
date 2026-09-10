@@ -1,3 +1,4 @@
+import type { Workspace } from '@/lib/workspace';
 import type {
   AttestInput,
   Challenge,
@@ -51,7 +52,7 @@ export interface VeilanceApi {
   openRequests(holder: PartyName): Promise<Challenge[]>;
   verify(challenge: string, holder: PartyName, profile: Profile): Promise<VerifyResult>;
 
-  graph(): Promise<Graph>;
+  graph(viewer?: Workspace): Promise<Graph>;
   explorerTip(): Promise<ExplorerTip>;
   explorerBlock(height: number): Promise<ExplorerBlock>;
   explorerTx(hash: string): Promise<ExplorerTx>;

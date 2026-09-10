@@ -52,3 +52,37 @@ src/
     TopBar.tsx Map.tsx StatusBar.tsx Drawer.tsx JobRing.tsx ExplorerModal.tsx ui.tsx
     drawers/ OrgDrawer.tsx LotDrawer.tsx VerifierDrawer.tsx PolicyDrawer.tsx
 ```
+
+### Company workspaces
+
+The default screen is VoltCell's inventory and tasks. The demo workspace selector
+switches between company views, the OEM verification workspace, and the full
+operations graph. Companies see their own received/sent records and a separate
+direct-transaction view; OEM sees requests and verification results without lots.
+The selector is saved in session storage. Supplier actions on outgoing records are
+read-only unless the selected workspace is that record's recipient.
+
+`GET /graph?viewer=mine|refiner|batteryMfr|verifier|admin` projects graph responses on
+the agent, with the same projection used by the mock adapter. The default scope is
+`batteryMfr`. Query caches are separated by workspace. Tests:
+
+```sh
+node --import ./agent/node_modules/tsx/dist/loader.mjs shared/graphScope.test.ts
+```
+
+Run that command from the repository root. This is **demo presentation scope, not
+access control**: the existing agent holds every demo company's keys, the selector
+is not a login, and the other agent endpoints remain unauthenticated. Deployment
+for separate companies requires authenticated sessions, server-derived company
+scope and authorization for all reads/writes (including jobs, credentials,
+explorer, policy and administrative routes), and isolated company key storage.
+
+### Language
+
+The header's 한글 / EN control switches product copy between Korean and English.
+The preference is stored in `localStorage` under `veilance-language` (Korean by
+default) and updates the document language. Switching keeps the current workspace,
+open drawer and form values. Company names, free-form data and technical evidence
+remain unchanged; translated option labels retain their original API values.
+Translations live in `src/lib/i18n/messages.ts`; components subscribe with
+`useI18n()` and render text through `t(source, values)` for interpolated messages.
