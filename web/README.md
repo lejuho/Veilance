@@ -21,7 +21,7 @@ npm run build        # dist/
 | `VITE_API_URL` | Base URL of the party agent, e.g. `http://localhost:4000`. Unset → mock adapter. |
 | `VITE_MOCK=1` | Force the mock adapter even when `VITE_API_URL` is set. |
 | `VITE_MOCK_PROVE_MS` | Mock only. Simulated proving time in ms (default `3000`). |
-| `VITE_EXPLORER_URL_TEMPLATE` | Optional, e.g. `https://explorer/tx/{hash}`. Adds an external link to the explorer modal. |
+| `VITE_EXPLORER_TX_URL` / `VITE_EXPLORER_BLOCK_URL` / `VITE_EXPLORER_CONTRACT_URL` | Optional per-kind external explorer links (`{hash}`, `{height}`, `{address}`). Preprod: `https://preprod.midnightexplorer.com/transactions/0x{hash}`, `/blocks/{height}`, `/contracts/{address}`. `VITE_EXPLORER_URL_TEMPLATE` is a single-template fallback. |
 
 ## Routes
 

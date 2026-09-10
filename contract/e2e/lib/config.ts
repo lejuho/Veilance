@@ -18,13 +18,31 @@ export const ZK_CONFIG_DIR = path.join(CONTRACT_DIR, "src", "managed", "veilance
 export const REPORT_JSON_PATH = path.join(E2E_DIR, "report.json");
 export const REPORT_MD_PATH = path.join(E2E_DIR, "REPORT.md");
 
-export const NETWORK_ID = "undeployed";
+// ---------------------------------------------------------------------------
+// Network selection. Defaults are the local devnet (devnet.yml). Every value
+// can be overridden by environment variables so the same code targets a
+// public Midnight test network:
+//   VEILANCE_NETWORK_ID   e.g. "undeployed" (local) or the public network's id
+//   VEILANCE_NODE_URL / VEILANCE_NODE_WS_URL
+//   VEILANCE_INDEXER_HTTP_URL / VEILANCE_INDEXER_WS_URL
+//   VEILANCE_PROOF_SERVER_URL   (the proof server always runs locally)
+//   VEILANCE_FUNDER_SEED  64-hex seed of a wallet that already holds NIGHT and
+//                         funds the four party wallets. Defaults to the local
+//                         devnet genesis wallet; on a public network set it to a
+//                         faucet-funded wallet, or leave it empty to skip
+//                         funding entirely (fund the party wallets yourself).
+//   VEILANCE_FUNDING_AMOUNT  NIGHT (smallest unit) sent to each party.
+// ---------------------------------------------------------------------------
+const env = (k: string, d: string): string => process.env[k] ?? d;
 
-export const NODE_URL = "http://localhost:9944";
-export const NODE_WS_URL = "ws://localhost:9944";
-export const INDEXER_HTTP_URL = "http://localhost:8088/api/v4/graphql";
-export const INDEXER_WS_URL = "ws://localhost:8088/api/v4/graphql/ws";
-export const PROOF_SERVER_URL = "http://localhost:6300";
+export const NETWORK_ID = env("VEILANCE_NETWORK_ID", "undeployed");
+export const IS_LOCAL_DEVNET = NETWORK_ID === "undeployed";
+
+export const NODE_URL = env("VEILANCE_NODE_URL", "http://localhost:9944");
+export const NODE_WS_URL = env("VEILANCE_NODE_WS_URL", "ws://localhost:9944");
+export const INDEXER_HTTP_URL = env("VEILANCE_INDEXER_HTTP_URL", "http://localhost:8088/api/v4/graphql");
+export const INDEXER_WS_URL = env("VEILANCE_INDEXER_WS_URL", "ws://localhost:8088/api/v4/graphql/ws");
+export const PROOF_SERVER_URL = env("VEILANCE_PROOF_SERVER_URL", "http://localhost:6300");
 
 /** The four demo parties, matching test/demo.test.ts's cast exactly. */
 export const PARTY_NAMES = ["admin", "mine", "refiner", "batteryMfr"] as const;
@@ -58,14 +76,17 @@ export const WALLET_SEEDS: Record<PartyName, string> = {
  * It is publicly documented and identical across every local devnet; it is
  * not a secret of any kind.
  */
-export const GENESIS_WALLET_SEED =
-  "0000000000000000000000000000000000000000000000000000000000000001";
+const LOCAL_GENESIS_SEED = "0000000000000000000000000000000000000000000000000000000000000001";
+/** Seed of the wallet that funds the parties. Empty string = no funding step. */
+export const FUNDER_SEED: string = process.env.VEILANCE_FUNDER_SEED ?? (IS_LOCAL_DEVNET ? LOCAL_GENESIS_SEED : "");
+/** @deprecated use FUNDER_SEED */
+export const GENESIS_WALLET_SEED = FUNDER_SEED;
 
 /** How much NIGHT (in the smallest unit) the genesis wallet sends each party. */
 // The dev-preset genesis wallet holds 250_000_000_000_000 NIGHT (5 UTxOs of
 // 50_000_000_000_000, verified against the running devnet on 2026-09-09).
 // 4 parties x 40_000_000_000_000 = 160_000_000_000_000 leaves headroom for fees.
-export const FUNDING_AMOUNT = 40_000_000_000_000n;
+export const FUNDING_AMOUNT = BigInt(env("VEILANCE_FUNDING_AMOUNT", IS_LOCAL_DEVNET ? "40000000000000" : "1000000000"));
 
 /** Private-state store password. Local e2e only — never a real secret. */
 export const PRIVATE_STATE_PASSWORD = "Veilance-e2e-2026!LocalOnly#Pw";

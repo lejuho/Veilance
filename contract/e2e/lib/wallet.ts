@@ -15,6 +15,8 @@ import { WebSocket } from "ws";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).WebSocket = WebSocket;
 
+import fs from "node:fs";
+import path from "node:path";
 import * as Rx from "rxjs";
 import * as ledger from "@midnight-ntwrk/ledger-v8";
 import { WalletFacade, WalletEntrySchema, type FacadeState } from "@midnight-ntwrk/wallet-sdk-facade";
@@ -53,7 +55,7 @@ const hexToBytes = (hex: string): Uint8Array => {
  * (Zswap / NightExternal / Dust), the same HD path the `midnight-js` and
  * `example-counter` skills use: account 0, index 0.
  */
-const deriveKeys = (masterSeed: Uint8Array) => {
+export const deriveKeys = (masterSeed: Uint8Array) => {
   const hdWallet = HDWallet.fromSeed(masterSeed);
   if (hdWallet.type !== "seedOk") {
     throw new Error(`invalid wallet seed: ${String(hdWallet.error)}`);
@@ -77,10 +79,51 @@ export type Wallet = {
   readonly keystore: UnshieldedKeystore;
 };
 
-/** Builds and starts a wallet from a 32-byte-hex seed against this task's devnet endpoints. */
-export const buildWallet = async (label: string, seedHex: string): Promise<Wallet> => {
+export type BuildWalletOptions = {
+  /**
+   * Directory for persisted wallet state. When set, the three sub-wallets are
+   * restored from `<stateDir>/<label>.{shielded,unshielded,dust}.json` if those
+   * files exist (skipping the long first sync on public networks), and their
+   * state is written back once synced and then every minute.
+   */
+  readonly stateDir?: string;
+};
+
+const stateFile = (dir: string, label: string, kind: "shielded" | "unshielded" | "dust") =>
+  path.join(dir, `${label}.${kind}.json`);
+
+const readState = (dir: string | undefined, label: string, kind: "shielded" | "unshielded" | "dust"): string | undefined => {
+  if (!dir) return undefined;
+  const f = stateFile(dir, label, kind);
+  return fs.existsSync(f) ? fs.readFileSync(f, "utf8") : undefined;
+};
+
+/** Serialises the three sub-wallets to `stateDir`. Safe to call repeatedly. */
+export const persistWallet = async (wallet: Wallet, stateDir: string): Promise<void> => {
+  fs.mkdirSync(stateDir, { recursive: true });
+  const [sh, un, du] = await Promise.all([
+    wallet.facade.shielded.serializeState(),
+    wallet.facade.unshielded.serializeState(),
+    wallet.facade.dust.serializeState(),
+  ]);
+  for (const [kind, data] of [["shielded", sh], ["unshielded", un], ["dust", du]] as const) {
+    const f = stateFile(stateDir, wallet.label, kind);
+    fs.writeFileSync(`${f}.tmp`, data);
+    fs.renameSync(`${f}.tmp`, f);
+  }
+};
+
+/** Builds and starts a wallet from a 32-byte-hex seed against the configured network. */
+export const buildWallet = async (label: string, seedHex: string, options: BuildWalletOptions = {}): Promise<Wallet> => {
   const masterSeed = hexToBytes(seedHex);
   const keys = deriveKeys(masterSeed);
+  const saved = {
+    shielded: readState(options.stateDir, label, "shielded"),
+    unshielded: readState(options.stateDir, label, "unshielded"),
+    dust: readState(options.stateDir, label, "dust"),
+  };
+  const restoring = Boolean(saved.shielded && saved.unshielded && saved.dust);
+  if (options.stateDir) console.log(`  wallet ${label}: ${restoring ? "restoring persisted state" : "fresh sync"}`);
 
   const shieldedSecretKeys = ledger.ZswapSecretKeys.fromSeed(keys[Roles.Zswap]);
   const dustSecretKey = ledger.DustSecretKey.fromSeed(keys[Roles.Dust]);
@@ -104,15 +147,32 @@ export const buildWallet = async (label: string, seedHex: string): Promise<Walle
 
   const facade = await WalletFacade.init({
     configuration,
-    shielded: (config) => ShieldedWallet(config).startWithSecretKeys(shieldedSecretKeys),
-    unshielded: (config) => UnshieldedWallet(config).startWithPublicKey(PublicKey.fromKeyStore(keystore)),
+    shielded: (config) =>
+      restoring ? ShieldedWallet(config).restore(saved.shielded as string) : ShieldedWallet(config).startWithSecretKeys(shieldedSecretKeys),
+    unshielded: (config) =>
+      restoring ? UnshieldedWallet(config).restore(saved.unshielded as string) : UnshieldedWallet(config).startWithPublicKey(PublicKey.fromKeyStore(keystore)),
     dust: (config) =>
-      DustWallet(config).startWithSecretKey(dustSecretKey, ledger.LedgerParameters.initialParameters().dust),
+      restoring
+        ? DustWallet(config).restore(saved.dust as string)
+        : DustWallet(config).startWithSecretKey(dustSecretKey, ledger.LedgerParameters.initialParameters().dust),
   });
 
   await facade.start(shieldedSecretKeys, dustSecretKey);
 
-  return { label, facade, shieldedSecretKeys, dustSecretKey, keystore };
+  const wallet: Wallet = { label, facade, shieldedSecretKeys, dustSecretKey, keystore };
+  if (options.stateDir) {
+    const dir = options.stateDir;
+    // Persist once the wallet first reports synced, then every minute.
+    facade
+      .waitForSyncedState()
+      .then(() => persistWallet(wallet, dir))
+      .catch((e) => console.warn(`  wallet ${label}: persist after sync failed: ${String(e)}`));
+    const timer = setInterval(() => {
+      persistWallet(wallet, dir).catch((e) => console.warn(`  wallet ${label}: periodic persist failed: ${String(e)}`));
+    }, 60_000);
+    timer.unref();
+  }
+  return wallet;
 };
 
 export const waitForSync = async (wallet: Wallet): Promise<FacadeState> => wallet.facade.waitForSyncedState();

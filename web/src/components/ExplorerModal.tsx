@@ -7,10 +7,15 @@ import { Hash, Row } from './ui';
 
 type Kind = 'tx' | 'block' | 'contract';
 
-function external(value: string | undefined, address?: string): string | null {
-  const t = import.meta.env.VITE_EXPLORER_URL_TEMPLATE as string | undefined;
-  if (!t || (!value && !address)) return null;
-  return t.replace('{hash}', value ?? '').replace('{height}', value ?? '').replace('{address}', address ?? '');
+// External explorer links. Per-kind templates win; VITE_EXPLORER_URL_TEMPLATE is
+// the single-template fallback. Placeholders: {hash} {height} {address}.
+// Preprod example: VITE_EXPLORER_TX_URL=https://preprod.midnightexplorer.com/transactions/0x{hash}
+function external(kind: Kind, value: string | undefined): string | null {
+  const env = import.meta.env as Record<string, string | undefined>;
+  const perKind = kind === 'tx' ? env.VITE_EXPLORER_TX_URL : kind === 'block' ? env.VITE_EXPLORER_BLOCK_URL : env.VITE_EXPLORER_CONTRACT_URL;
+  const t = perKind ?? env.VITE_EXPLORER_URL_TEMPLATE;
+  if (!t || !value) return null;
+  return t.replace('{hash}', value).replace('{height}', value).replace('{address}', value);
 }
 
 function TxView({ hash }: { hash: string }) {
@@ -161,7 +166,7 @@ function Raw({ data }: { data: unknown }) {
 
 export function ExplorerModal({ kind, value, onClose }: { kind: Kind; value?: string; onClose: () => void }) {
   const title = kind === 'tx' ? 'Transaction' : kind === 'block' ? `Block ${value}` : 'Contract';
-  const ext = external(value);
+  const ext = external(kind, value);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/70 p-4 backdrop-blur-sm" onMouseDown={onClose} role="dialog" aria-modal>
       <div className="w-full max-w-xl animate-fadeIn rounded-lg border border-ink-600 bg-ink-850 shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
