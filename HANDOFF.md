@@ -5,7 +5,7 @@
 
 ## 0. 최신 소식 (2026-09-13, ethan) — 마일스톤 1·2·3 전부 완료 🎉
 
-**0-2절이 최신입니다.** 마일스톤 2·3도 이어서 끝냈습니다 — 요약만 먼저:
+**이 0절이 최신입니다.** 마일스톤 2·3도 이어서 끝냈습니다 — 요약만 먼저:
 
 - **마일스톤 2(검증자 독립 검증)**: `/verify/*` 세 라우트가 여전히 `appState.
   partyOrThrow(holder)`로 holder의 **로컬 시크릿**에서 partyId를 계산하고 있던 버그를
@@ -128,7 +128,7 @@ Preprod 배포 정보 (커밋 da18af3 메시지 기준):
 - **`npm install`을 하지 마세요.** `agent/node_modules`는 `contract/node_modules`와 같은
   디렉터리를 가리켜야 합니다 (WASM 런타임 클래스가 두 곳에 따로 설치되면 회로 호출 시
   `"'contractState' parameter ContractState (...) has unexpected type"` 오류가 납니다 —
-  §0-5에서 실제로 겪은 문제). **Windows에서는 git-bash `ln -s`를 신뢰하지 마세요** — 심볼릭
+  §0-1의 5번 항목에서 실제로 겪은 문제). **Windows에서는 git-bash `ln -s`를 신뢰하지 마세요** — 심볼릭
   링크 권한이 없으면 조용히 실패하거나 진짜 별도의 디렉터리를 만들어버릴 수 있고, 이러면
   `ls`로는 정상처럼 보입니다. 대신 PowerShell에서 다음으로 만들고 `LinkType`이 `Junction`인지
   확인하세요:
@@ -189,7 +189,7 @@ Preprod 배포 정보 (커밋 da18af3 메시지 기준):
 | 검증 | 결과 |
 | --- | --- |
 | `git fetch` + merge로 주호님의 `9324bf2` 반영 | 완료, 충돌 없음 |
-| `agent/node_modules` 심볼릭 링크 생성 | 성공이라 기록했었으나 **오기록이었음** — 실제로는 진짜 별도 디렉터리였고 §0-5에서 발견/수정 |
+| `agent/node_modules` 심볼릭 링크 생성 | 성공이라 기록했었으나 **오기록이었음** — 실제로는 진짜 별도 디렉터리였고 §0-1의 5번 항목에서 발견/수정 |
 | `agent`: `npx tsc --noEmit` | `contract/src/managed/` 부재로 인한 에러만 발생 (예상된 것, compile:zk 실행하면 해결될 것) |
 | `web`: `npm ci`, `npm run typecheck`, `npm run build` | 모두 통과 |
 | `contract`: `npm ci` | 통과 |
@@ -209,8 +209,14 @@ Preprod 배포 정보 (커밋 da18af3 메시지 기준):
 - [x] `print-identity.ts`로 실제 partyId 계산 → `registry.json`에 채움, mine/refiner/batteryMfr을
       각각 별도 포트의 완전히 분리된 프로세스로 띄워 Preprod에서 발급→전달 전체 체인 검증 완료
       (2026-09-13, ethan — §0 참고). 이 과정에서 `agent/node_modules` 심볼릭 링크 버그를
-      발견/수정함(§0-5).
-- [ ] 다음: 마일스톤 2(검증자 독립 검증), 마일스톤 3(Evidence 드로어) 순서로 착수.
+      발견/수정함(§0-1의 5번 항목).
+- [x] 마일스톤 2(검증자 독립 검증) — `resolvePartyId`/`anyPartyOrThrow` 수정 +
+      `verify-independent.ts` 신규, Preprod에서 agent 프로세스 없이 실제 검증 완료
+      (2026-09-13, ethan — §0 참고).
+- [x] 마일스톤 3(Evidence 드로어) — `verifierKeys.ts` 신규, `graph.ts`/`GraphEdge`/
+      `LotDrawer.tsx`에 circuit·verifier key·proving time 노출, 실제 Preprod 데이터로 확인
+      (2026-09-13, ethan — §0 참고).
+- [ ] 다음: 없음 — §4의 세 마일스톤 전부 완료. 다음 지시 대기 중.
 
 ## 6-1. 이 PC(새 PC, ethan)로 옮긴 뒤 발견해서 고친 것 (2026-09-13)
 
