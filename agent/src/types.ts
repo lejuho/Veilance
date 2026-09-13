@@ -196,6 +196,17 @@ export type GraphEdge = {
   consumedTxHash?: string;
   consumedBlockHeight?: number;
   deliveredAt?: string;
+  /**
+   * Evidence panel fields (roadmap milestone 3, HANDOFF.md §4-3): how long
+   * this edge's own `circuit` call took end to end (proving + balancing +
+   * submit + finality — see jobs.ts's module doc), and a short sha256
+   * fingerprint of the verifier key that checks every proof for `circuit`
+   * (see verifierKeys.ts — the key itself is a public, circuit-wide build
+   * artifact, not per-job data, so this is present even when `provingMs` is
+   * absent for an edge whose job history this process no longer holds).
+   */
+  provingMs?: number;
+  verifierKeyFingerprint?: string;
 };
 
 export type GraphAttestation = {

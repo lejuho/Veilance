@@ -56,6 +56,16 @@ function fakeHash(...parts: (string | number)[]): string {
 
 const PARTY_ID = Object.fromEntries(ALL.map((p) => [p, fakeHash('veilance:id', p)])) as Record<PartyName, string>;
 const CERT_ID = Object.fromEntries(ALL.map((p) => [p, fakeHash('cert', p)])) as Record<PartyName, string>;
+/**
+ * Evidence panel field (agent's verifierKeys.ts equivalent): the real agent
+ * fingerprints the actual compiled verifier key bytes; the mock has none, so
+ * it fakes a stable per-circuit value the same way it fakes party ids — same
+ * circuit always shows the same "key", never changes across a session.
+ */
+const VERIFIER_KEY_FINGERPRINT: Partial<Record<Circuit, string>> = {
+  issueProvenance: fakeHash('verifier-key', 'issueProvenance').slice(0, 16),
+  transferProvenance: fakeHash('verifier-key', 'transferProvenance').slice(0, 16),
+};
 
 interface Tx {
   txHash: string;
@@ -340,6 +350,8 @@ export function createMockApi(): VeilanceApi {
       jobId: job.id,
       originId: fields.originId,
       materialType: material,
+      provingMs: job.elapsedMs,
+      verifierKeyFingerprint: VERIFIER_KEY_FINGERPRINT[circuit],
     });
   }
 

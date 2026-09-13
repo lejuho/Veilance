@@ -122,6 +122,7 @@ CLI-only for now).
 - Party private state = the level provider + a small JSON sidecar (`agent/.state/<party>/agent.json`) for enc keypair, held credentials with labels, lastSeenInboxIndex, job history, and (v1.1) an `issued[]` list of every `issueProvenance`/`transferProvenance` call this party made as issuer (`{ commitment, recipient, circuit, inboxIndex?, txHash?, blockHeight?, carbonClass?, materialLabel?, originLabel?, createdAt, jobId }`) — what `GET /graph` builds edges from, so they survive a restart without re-deriving them from job history every request.
 - Attack demo: the UI needs to be able to call transfer on a CONSUMED credential; the agent must not block it client-side (it warns via `disclosure-preview`/UI, but executes), so the contract assert is what rejects.
 - Labels (origin name, material name, org name) are L3 data: keep them in `agent/registry.json`, seed with demo values ("DRC Mine X", "Cobalt", org names).
+- (v1.3) `GET /graph`'s `edges[].provingMs` comes from looking up `ev.jobId` in this process's job history (`getJob`, appState.jobsById — populated from persisted `agent.json` job history at boot, see bootstrap.ts) at request time, not a persisted field on the edge itself — so it can be absent for an old edge whose job history has aged out, while `verifierKeyFingerprint` (a hash of the compiled `keys/<circuit>.verifier` file, not per-job data — see `verifierKeys.ts`) is always present once `compile:zk` has run.
 
 ## Per-company agents (v1.2 addendum — one party per process)
 
@@ -183,7 +184,9 @@ Every job (`Job.txHash`, `Job.blockHeight`) is linkable to `/explorer/tx/:hash`;
             txHash?: string, blockHeight?: number, inboxIndex?: number, carbonClass?: number, materialLabel?: string,
             originLabel?: string, createdAt: string, jobId?: string,
             lotNumber: number,                        // 1-based, edge-creation order — "Cobalt · lot 2"
-            nullifier?: string, consumedTxHash?: string, consumedBlockHeight?: number, deliveredAt?: string }],
+            nullifier?: string, consumedTxHash?: string, consumedBlockHeight?: number, deliveredAt?: string,
+            provingMs?: number,                       // v1.3: this edge's own circuit call, end to end — absent if this process's job history no longer has it (see jobs.ts)
+            verifierKeyFingerprint?: string }],        // v1.3: sha256(keys/<circuit>.verifier), first 16 hex chars — same value for every proof of that circuit, see verifierKeys.ts
   attestations: [{ holder: PartyName, profile, attestationKey, policyVersion, txHash?, blockHeight?, challenge?: string, createdAt }],
   activeJob?: Job,           // the job currently running (for the global progress bar)
   queue: Job[]               // queued jobs

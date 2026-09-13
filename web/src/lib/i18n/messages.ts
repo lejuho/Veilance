@@ -57,6 +57,7 @@ export const messages: Record<string, string> = {
   'Timeline': '처리 이력', 'Issued': '발행', 'Delivered': '기록 수신', 'Transferred': '전달', '· to': '· 받는 곳',
   '우리 회사가 보낸 기록입니다. 수령 회사의 재고 작업은 해당 회사에서 진행합니다.': 'This is a record sent by our company. The recipient manages its own inventory.',
   'Prove compliance': '기준 충족 증명', 'Evidence': '기술 증빙', 'Commitment': '커밋먼트', 'Nullifier': '사용 식별자', 'Inbox #': '수신함 번호',
+  'Circuit': '회로', 'Verifier key': '검증 키', 'Proving time': '증명 생성 시간',
   '재료 기록 확인 중…': 'Checking material records…', '받은 재료 확인': 'Check received materials',
   '우리 회사에 전달된 재료 기록을 불러옵니다. 실제 물건의 입고를 확인하는 기능은 아닙니다.': 'Import material records sent to our company. This does not confirm physical delivery.',
   '새로 받은 재료 기록이 없습니다': 'No new material records', 'Certify an origin in Policy first': '먼저 정책에서 원산지를 승인하세요',

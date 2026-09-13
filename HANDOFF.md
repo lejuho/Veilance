@@ -3,7 +3,27 @@
 작업자 교대용 요약. 다음 사람은 이 문서와 `README.md`만 읽고 시작할 수 있어야 합니다.
 새 작업을 마칠 때마다 아래 "현재 상태"와 "다음 할 일"을 갱신하고 커밋합니다.
 
-## 0. 최신 소식 (2026-09-13, ethan) — 마일스톤 1 실검증 완료 🎉
+## 0. 최신 소식 (2026-09-13, ethan) — 마일스톤 1·2·3 전부 완료 🎉
+
+**0-2절이 최신입니다.** 마일스톤 2·3도 이어서 끝냈습니다 — 요약만 먼저:
+
+- **마일스톤 2(검증자 독립 검증)**: `/verify/*` 세 라우트가 여전히 `appState.
+  partyOrThrow(holder)`로 holder의 **로컬 시크릿**에서 partyId를 계산하고 있던 버그를
+  발견/수정(마일스톤 1과 똑같은 종류의 버그, verify 경로에 남아있던 것) — `resolvePartyId`
+  + `anyPartyOrThrow`로 통일. 그리고 진짜 목표인 **완전 독립 검증 스크립트**
+  `agent/src/cli/verify-independent.ts`를 새로 작성: 지갑도, 증명 서버도, agent 프로세스도
+  전혀 없이 indexer만 직접 읽어서 동일한 PASSED/PENDING/STALE 판정을 내림. 로컬 agent
+  프로세스를 전부 꺼둔 채로 Preprod에서 실제로 검증 완료.
+- **마일스톤 3(Evidence 드로어)**: `agent/src/verifierKeys.ts`(회로별 verifier key
+  sha256 fingerprint) + `graph.ts`가 각 edge에 `provingMs`/`verifierKeyFingerprint` 추가,
+  `web/src/components/drawers/LotDrawer.tsx`의 Evidence 섹션에 Circuit/Verifier key/Proving
+  time 세 줄 추가. mock(`web/src/api/mock.ts`)에도 동일 필드 채움. 실제 Preprod `/graph`
+  응답으로 진짜 값(`provingMs: 40337`, 회로별로 다른 `verifierKeyFingerprint`) 확인 완료.
+
+상세 내용은 §4를 참고하세요 (다음 마일스톤 섹션에 각 항목의 완료 기록을 갱신해뒀습니다).
+아래 0-1절(이전 기록)은 마일스톤 1만 다룹니다 — 그대로 남겨둠.
+
+## 0-1. 마일스톤 1 실검증 완료 (이전 기록)
 
 이전까지 유일한 블로커였던 WSL2/Docker가 사용자 쪽에서 설치 완료됐고, 그 뒤로 이어서:
 
@@ -64,8 +84,7 @@
    - 작업 전 `agent/.state/preprod`를 `preprod.backup-20260913-164438`로 백업해둠
      (gitignored, 필요 없어지면 지워도 됨).
 
-**다음(미착수)**: 마일스톤 2(검증자가 indexer를 직접 읽는 독립 검증), 마일스톤 3
-(Evidence 드로어에 회로명/verifier key/증명 시간 노출). §4 참고.
+**다음(미착수)**: 없음 — 주호님이 지시한 세 마일스톤(§4) 전부 완료. 다음 지시 대기 중.
 
 ## 1. 한 줄 요약
 
@@ -149,11 +168,21 @@ Preprod 배포 정보 (커밋 da18af3 메시지 기준):
    batteryMfr을 각각 별도 포트의 완전히 분리된 프로세스로 띄워 Preprod에서 발급→전달
    전체 체인이 서로의 시크릿 없이 동작함을 확인했습니다. 상세는 `agent/API.md`의
    "Per-company agents" 절과 `agent/README.md`의 "Running as a single-company agent" 절 참고.
-2. **검증자가 indexer를 직접 읽는 독립 검증** — 지금은 verify 엔드포인트도 데모 agent를 거침.
-   검증자(OEM/규제기관)가 agent를 신뢰하지 않고 indexer에서 직접 증명 상태를 읽을 수 있게.
-   **미착수.**
-3. **드로어 Evidence에 증명 세부 표시** — 회로명, verifier key, 증명 시간을 웹 UI의 lot
-   드로어(Evidence 섹션)에 노출. **미착수.**
+2. **검증자가 indexer를 직접 읽는 독립 검증** — **완료(2026-09-13, ethan, §0 참고)**.
+   기존 `/verify/*` 세 라우트(`createChallenge`/`getVerifyResult`/`listOpenChallenges`)가
+   holder의 로컬 시크릿에서 partyId를 계산하던 버그를 `resolvePartyId`/`anyPartyOrThrow`로
+   고쳤고, 진짜 목표인 완전 독립 스크립트 `agent/src/cli/verify-independent.ts`를 새로
+   작성했습니다 — 지갑·증명 서버·agent 프로세스 전부 없이 indexer만 직접 읽어 동일한
+   PASSED/PENDING/STALE 판정을 냅니다. 로컬 agent를 전부 꺼둔 채로 Preprod에서 실제 검증
+   완료(기존 attestation에 PASSED, 미사용 challenge에 PENDING). 상세는 `agent/API.md`의
+   "Independent verification" 절 참고.
+3. **드로어 Evidence에 증명 세부 표시** — **완료(2026-09-13, ethan, §0 참고)**. 회로명은
+   `GraphEdge.circuit`으로 이미 있었고, `agent/src/verifierKeys.ts`(compile:zk 산출물
+   `keys/<circuit>.verifier`의 sha256 앞 16자 — 회로마다 고정, 매 증명마다 같음)와
+   `graph.ts`의 job-history 조회로 `provingMs`를 추가해 `GET /graph`의 각 edge에
+   `provingMs`/`verifierKeyFingerprint`를 실었습니다. 웹 UI `LotDrawer.tsx`의 Evidence
+   섹션에 Circuit/Verifier key/Proving time 세 줄을 추가(mock에도 동일 필드 채움).
+   실제 Preprod `/graph` 응답으로 확인(예: `provingMs: 40337`, 회로별로 다른 fingerprint).
 
 ## 5. 이 PC(ethan, Windows 11)에서 확인한 것
 
@@ -253,4 +282,21 @@ Preprod 상태(`agent/.env.preprod`, `agent/.state/preprod/`)는 노트북에서
   batteryMfr) 전체 체인이 서로의 시크릿 없이 동작함을 확인 — 마일스톤 1 완전 검증. 이 과정에서
   `agent/node_modules`가 (예전 기록과 달리) 진짜 심볼릭 링크가 아니라 별도 설치본이었던 버그를
   발견, PowerShell `mklink /J`로 교체해 수정(회로 호출이 `ContractState has unexpected type`로
-  실패하던 근본 원인). 전체 내용은 §0 참고. 다음은 마일스톤 2(검증자 독립 검증).
+  실패하던 근본 원인). 전체 내용은 §0 참고.
+- 2026-09-13 (ethan): 마일스톤 2(검증자 독립 검증). `handlers.ts`의 `createChallenge`/
+  `getVerifyResult`/`listOpenChallenges`가 holder의 로컬 시크릿으로 partyId를 계산하던
+  버그를 `resolvePartyId`/`anyPartyOrThrow`로 수정(마일스톤 1과 같은 종류의 버그가 verify
+  경로에 남아있었음) — mine 전용 에이전트로 batteryMfr의 검증 결과를 정상 반환함을 실증.
+  새 `agent/src/cli/verify-independent.ts`: 지갑·증명 서버·agent 프로세스 없이 indexer만
+  직접 읽는 완전 독립 검증 스크립트. 로컬 agent 전부 정지 상태에서 Preprod 대상으로 실행해
+  실제 attestation에 PASSED, 미사용 challenge에 PENDING을 정확히 재현함을 확인. `agent/API.md`에
+  "Independent verification" 절 추가. 커밋 `2885be2`.
+- 2026-09-13 (ethan): 마일스톤 3(Evidence 드로어). 새 `agent/src/verifierKeys.ts`(회로별
+  verifier key sha256 fingerprint, 최초 1회 읽고 캐시), `graph.ts`가 각 edge에 job history
+  조회로 `provingMs`, verifierKeys.ts로 `verifierKeyFingerprint` 추가. `agent/src/types.ts`·
+  `web/src/api/types.ts`의 `GraphEdge`에 두 필드 추가, `web/src/api/mock.ts`에도 동일 필드
+  채움(mock은 fakeHash로 안정적인 가짜 fingerprint 생성). `LotDrawer.tsx`의 Evidence 섹션에
+  Circuit/Verifier key/Proving time 세 줄 추가, `messages.ts`에 한국어 번역 추가. 전체 4파티
+  호스팅 에이전트로 실제 Preprod `/graph`를 조회해 진짜 값(`provingMs: 40337`, 회로별로 다른
+  fingerprint) 확인. `contract`·`agent`·`web` typecheck와 `web` 프로덕션 빌드 전부 통과.
+  이것으로 §4의 세 마일스톤 전부 완료 — 다음 지시 대기 중.

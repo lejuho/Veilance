@@ -21,7 +21,8 @@ import { appState } from "./appState.js";
 import { fromHex, toHex } from "./bytes.js";
 import { registry } from "./registry.js";
 import { PARTY_NAMES, type PartyName } from "./config.js";
-import { getActiveJob, getQueuedJobs, listJobs } from "./jobs.js";
+import { getActiveJob, getJob, getQueuedJobs, listJobs } from "./jobs.js";
+import { verifierKeyFingerprint } from "./verifierKeys.js";
 import type {
   EdgeStatus,
   Graph,
@@ -252,6 +253,12 @@ const buildEdges = async (): Promise<GraphEdge[]> => {
     }
 
     lotNumber += 1;
+    // Evidence panel fields (roadmap milestone 3, HANDOFF.md §4-3): proving
+    // time comes from this event's own job record if this process still has
+    // it in history; the verifier key fingerprint is circuit-wide (every
+    // issueProvenance proof is checked by the same key), not per-job, so it
+    // doesn't need ev.jobId at all — see verifierKeys.ts.
+    const job = ev.jobId ? getJob(ev.jobId) : undefined;
     edges.push({
       id: ev.jobId ?? `${ev.from}-${to}-${ev.commitment.slice(0, 12)}`,
       from: ev.from,
@@ -273,6 +280,8 @@ const buildEdges = async (): Promise<GraphEdge[]> => {
       consumedTxHash: held?.cred.consumedTxHash,
       consumedBlockHeight: held?.cred.consumedBlockHeight,
       deliveredAt: held?.cred.receivedAt,
+      provingMs: job?.elapsedMs,
+      verifierKeyFingerprint: verifierKeyFingerprint(ev.circuit),
     });
   }
 

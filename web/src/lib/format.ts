@@ -11,6 +11,12 @@ export function fmtTime(iso?: string): string {
   return new Date(iso).toLocaleTimeString(getLocale() === 'ko' ? 'ko-KR' : 'en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+/** Evidence panel's proving time (ms, from Job.elapsedMs — see agent/src/types.ts's doc comment: proving + balancing + submit + finality, end to end). */
+export function fmtMs(ms?: number): string {
+  if (ms === undefined) return '—';
+  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
 /** Contract assert messages arrive as `veilance: credential already consumed`. */
 export function reason(error?: string): string {
   return t((error ?? 'assertion failed').replace(/^veilance:\s*/i, ''));

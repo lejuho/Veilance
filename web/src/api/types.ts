@@ -194,6 +194,9 @@ export interface GraphEdge {
   consumedTxHash?: string;
   consumedBlockHeight?: number;
   deliveredAt?: string;
+  /** Evidence panel (circuit name, verifier key, proving time) — mock and a real agent both may omit `provingMs` if job history has aged out. */
+  provingMs?: number;
+  verifierKeyFingerprint?: string;
 }
 export interface GraphAttestation {
   holder: PartyName;

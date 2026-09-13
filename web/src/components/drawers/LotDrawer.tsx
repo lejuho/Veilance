@@ -9,7 +9,7 @@ import { Button, ErrorLine, Explore, Field, Hash, Heading, Input, Lock, Reason, 
 import { useGraph, useOpenRequests } from '@/hooks/queries';
 import { useAction } from '@/hooks/useAction';
 import { bus } from '@/lib/bus';
-import { cx } from '@/lib/format';
+import { cx, fmtMs } from '@/lib/format';
 import { consumedBy, lotTitle } from '@/lib/lots';
 import { CHAIN, PARTIES, PROFILE_HELP, PROFILES, VERIFIER, nextInChain, orgName } from '@/lib/registry';
 import { isActive } from '@/lib/progress';
@@ -220,6 +220,9 @@ export function LotDrawer({ id, onClose, requestCode }: { id: string; onClose: (
         <Row k={t("Commitment")} v={<Hash value={lot.commitment} />} />
         <Row k={t("Nullifier")} v={<Hash value={lot.nullifier} />} />
         <Row k={t("Inbox #")} v={<span className="font-mono text-xs">{lot.inboxIndex ?? '—'}</span>} />
+        <Row k={t("Circuit")} v={<span className="font-mono text-xs">{lot.circuit}</span>} />
+        <Row k={t("Verifier key")} v={<Hash value={lot.verifierKeyFingerprint} />} />
+        <Row k={t("Proving time")} v={<span className="font-mono text-xs">{fmtMs(lot.provingMs)}</span>} />
       </details>
     </Drawer>
   );
