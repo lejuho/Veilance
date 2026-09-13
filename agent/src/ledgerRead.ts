@@ -26,7 +26,7 @@ export const fetchBlockHeight = async (): Promise<number> => {
 };
 
 export const getLedgerSummary = async (contractAddress: string) => {
-  const anyProviders = appState.partyOrThrow("admin").party.providers;
+  const anyProviders = appState.anyPartyOrThrow().party.providers;
   const [ledger, blockHeight] = await Promise.all([
     currentLedger(anyProviders, contractAddress),
     fetchBlockHeight(),
@@ -58,7 +58,7 @@ export const getLedgerSummary = async (contractAddress: string) => {
  * end up in the registry to begin with.
  */
 export const getPolicySummary = async (contractAddress: string) => {
-  const anyProviders = appState.partyOrThrow("admin").party.providers;
+  const anyProviders = appState.anyPartyOrThrow().party.providers;
   const ledger = await currentLedger(anyProviders, contractAddress);
 
   const origins = registry

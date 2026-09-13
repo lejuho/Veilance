@@ -206,7 +206,7 @@ app.post("/parties/:party/issue", async (c) => {
   if (!body.originId || !body.materialType || typeof body.carbonClass !== "number") {
     return c.json(error("originId, materialType and carbonClass are required", "bad_request"), 400);
   }
-  if (!(await recipientHasEncKey(body.recipient))) {
+  if (!(await recipientHasEncKey(party, body.recipient))) {
     return c.json(error(`recipient "${body.recipient}" has no registered encryption key`, "no_enc_key"), 400);
   }
   const job = startIssueJob(party, body);

@@ -187,12 +187,19 @@ export type IssueBody = {
   note?: string;
 };
 
-/** Pre-check used by the route before enqueueing (fast UX 400), re-verified inside the job at prep time regardless. */
-export const recipientHasEncKey = async (recipient: PartyName): Promise<boolean> => {
-  const recipientParty = appState.partyOrThrow(recipient);
-  const recipientId = pureCircuits.partyIdOf(fromHex(recipientParty.file.partySecret));
+/**
+ * Pre-check used by the route before enqueueing (fast UX 400), re-verified
+ * inside the job at prep time regardless. `recipient` need not be hosted by
+ * this process (separated deployment, HANDOFF.md §4) — its partyId comes
+ * from `resolvePartyId` (local secret if hosted, else registry.json's public
+ * directory). The ledger read itself is public, so any hosted party's
+ * providers work; it uses `caller`'s (the route's own `party` param), which
+ * this process is guaranteed to host.
+ */
+export const recipientHasEncKey = async (caller: PartyName, recipient: PartyName): Promise<boolean> => {
+  const recipientId = fromHex(resolvePartyId(recipient));
   const ledgerNow = await currentLedger(
-    appState.partyOrThrow(recipient).party.providers,
+    appState.partyOrThrow(caller).party.providers,
     appState.contractAddressOrThrow(),
   );
   return ledgerNow.partyEncKeys.member(recipientId);
@@ -203,8 +210,8 @@ export const startIssueJob = (partyName: PartyName, body: IssueBody): Job =>
     setStage("preparing");
     const issuer = appState.partyOrThrow(partyName);
     const contract = appState.contractOrThrow(partyName);
-    const recipientParty = appState.partyOrThrow(body.recipient);
-    const recipientId = pureCircuits.partyIdOf(fromHex(recipientParty.file.partySecret));
+    // See resolvePartyId's doc comment: body.recipient need not be hosted here.
+    const recipientId = fromHex(resolvePartyId(body.recipient));
 
     const originIdBytes = fromHex(body.originId);
     const materialTypeBytes = bytes32FromLabel(body.materialType);
@@ -291,8 +298,8 @@ export const startTransferJob = (partyName: PartyName, credentialId: string, bod
     const heldRecord = holder.file.heldCredentials.find((c) => c.id === credentialId);
     if (!heldRecord) throw new Error(`credential "${credentialId}" not found in ${partyName}'s vault`);
 
-    const recipientParty = appState.partyOrThrow(body.recipient);
-    const recipientId = pureCircuits.partyIdOf(fromHex(recipientParty.file.partySecret));
+    // See resolvePartyId's doc comment: body.recipient need not be hosted here.
+    const recipientId = fromHex(resolvePartyId(body.recipient));
     const newCarbonClass = BigInt(body.carbonClass);
     const newBatchSecret = crypto.getRandomValues(new Uint8Array(32));
 

@@ -106,10 +106,13 @@ with exactly one party" is now a real config knob, not just intent:
   hosted part(ies) to instead. Persisted after that, so the env var only
   matters once.
 - `POST /admin/suppliers` (and `POST /admin/bootstrap`'s three
-  `certifySupplier` calls) still work when the target company isn't hosted
-  by the admin agent: its `partyId` — public once certified on-chain anyway —
-  is read from `agent/registry.json`'s `parties` directory instead of being
-  computed locally. A company populates its own entry there by running
+  `certifySupplier` calls), `POST /parties/:party/issue`, and
+  `POST /parties/:party/credentials/:id/transfer` all still work when the
+  *other* party in the call (the certified company; the issue/transfer
+  recipient) isn't hosted by this agent: its `partyId` — public once
+  certified on-chain anyway — is read from `agent/registry.json`'s `parties`
+  directory instead of being computed locally from a secret this agent never
+  has. A company populates its own entry there by running
   `npx tsx src/cli/print-identity.ts <party>` on the agent that actually
   holds that party's secret, and shares the printed `partyId` (never the
   secret) for every other agent's `registry.json` to include.

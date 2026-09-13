@@ -261,7 +261,7 @@ export const getExplorerContract = async (): Promise<ExplorerContract> => {
  */
 export const getExplorerLedgerRaw = async (): Promise<Record<string, unknown>> => {
   const address = appState.contractAddressOrThrow();
-  const anyProviders = appState.partyOrThrow("admin").party.providers;
+  const anyProviders = appState.anyPartyOrThrow().party.providers;
   const ledger = await currentLedger(anyProviders, address);
 
   return {

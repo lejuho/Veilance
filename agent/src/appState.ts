@@ -39,6 +39,19 @@ class AppState {
     return p;
   }
 
+  /**
+   * Any one hosted party's `Party` — for reads that are public on-chain data
+   * (ledger summaries, explorer, the decryption-fallback branch of `GET
+   * /graph`) and so don't care whose provider object performs them. Used
+   * instead of hardcoding `"admin"`, which a single-company agent
+   * (`AGENT_PARTIES=mine`, HANDOFF.md §4) never hosts.
+   */
+  anyPartyOrThrow(): AppParty {
+    const first = this.parties.values().next();
+    if (first.done) throw new Error("no party hosted by this agent yet (still booting?)");
+    return first.value;
+  }
+
   contractOrThrow(name: PartyName): VeilanceContract {
     const c = this.partyOrThrow(name).contract;
     if (!c) throw new Error("contract not deployed yet — POST /deploy first");

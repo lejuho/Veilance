@@ -146,7 +146,7 @@ const resolveRecipientByDecryption = async (
   expectedCommitmentHex: string,
 ): Promise<PartyName | undefined> => {
   if (!appState.contractAddress) return undefined;
-  const anyProviders = appState.partyOrThrow("admin").party.providers;
+  const anyProviders = appState.anyPartyOrThrow().party.providers;
   const ledgerNow = await currentLedger(anyProviders, appState.contractAddress);
   const index = BigInt(inboxIndex);
   if (!ledgerNow.credentialInbox.member(index)) return undefined;

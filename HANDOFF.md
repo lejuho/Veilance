@@ -115,6 +115,42 @@ Preprod 배포 정보 (커밋 da18af3 메시지 기준):
       전제로 만들어졌으므로 그대로 재사용 가능(디렉터리만 나누면 됨, 시크릿 재발급 불필요).
 - [ ] 1번 검증이 끝나면 2번(검증자 독립 검증), 3번(Evidence 드로어) 순서로 착수.
 
+## 6-1. 이 PC(새 PC, ethan)로 옮긴 뒤 발견해서 고친 것 (2026-09-13)
+
+마일스톤 1(기업별 agent 분리) 코드를 실제로 여러 프로세스로 쪼개 돌리기 전에, 코드만 읽고
+"AGENT_PARTIES로 파티를 나눴을 때 자기 프로세스에 없는 파티를 참조하는 곳"을 전수 조사했습니다
+(`grep`으로 `.file.partySecret`·`partyOrThrow(` 전체 호출부 확인). `startCertifySupplierJob`만
+`resolvePartyId`로 이미 대응돼 있었고, 아래 두 종류는 안 돼 있어서 고쳤습니다:
+
+1. **발행/전달의 수신자(recipient)가 이 프로세스에 없으면 즉시 실패**: `startIssueJob`/
+   `startTransferJob`/`recipientHasEncKey`(handlers.ts)가 `appState.partyOrThrow(body.recipient)`로
+   수신자의 `partySecret`을 직접 읽어 `partyId`를 계산하고 있었습니다. mine·refiner·batteryMfr을
+   각자 다른 프로세스로 쪼개면 mine이 refiner에게 발행하는 순간
+   `"unknown or not-yet-built party: refiner"`로 죽습니다 — 데모의 핵심 플로우(광산→정제사→
+   배터리제조사)가 바로 막히는 지점이었습니다. `resolvePartyId`(호스팅돼 있으면 로컬 secret,
+   아니면 `registry.json`의 공개 `parties` 디렉터리)로 통일해서 고쳤습니다. `recipientHasEncKey`는
+   호출자(caller) 파라미터를 추가로 받아 그 프로바이더로 공개 원장을 읽도록 변경(원장 읽기 자체는
+   공개 데이터라 아무 파티의 provider든 상관없음).
+2. **`admin`을 안 호스팅하는 에이전트에서 `GET /ledger`, `/ledger/policy`, `/explorer/ledger-raw`,
+   `/graph`(수신자 복호화 폴백)가 전부 즉시 실패**: `ledgerRead.ts`·`graph.ts`·`explorer.ts`
+   네 곳이 "아무 파티 provider나 상관없는 공개 원장 읽기"에 `appState.partyOrThrow("admin")`을
+   하드코딩하고 있었습니다. `AGENT_PARTIES=mine`처럼 admin을 안 호스팅하는 단일 기업 에이전트는
+   이 네 엔드포인트가 전부 `"unknown or not-yet-built party: admin"`로 죽습니다 — 웹 UI 대시보드가
+   기업별 에이전트에서 거의 못 뜬다는 뜻이라 1번보다 더 근본적인 문제였습니다. `appState`에
+   `anyPartyOrThrow()`(호스팅된 파티 아무거나 하나)를 추가해 네 곳 다 교체. 반대로 `deploy`/
+   `certifyOrigin`/`certifySupplier`/`setCarbonThreshold`처럼 계약상 진짜 admin만 호출 가능한
+   회로는 `"admin"` 하드코딩을 그대로 뒀습니다(의도된 것, 버그 아님).
+
+두 수정 다 `npx tsc --noEmit`으로 확인: 에러 개수 그대로 43개(전부 `managed/` 부재로 인한 기존
+파생 에러, 줄 번호만 밀림 — 새 에러 없음). `contract` typecheck(27개, 동일 원인)·`web` build·
+`shared/graphScope.test.ts` 재확인, 전부 통과. `agent/API.md`의 "Per-company agents" 절에
+issue/transfer도 같은 패턴으로 크로스 에이전트에서 동작한다고 추가.
+
+Preprod 상태(`agent/.env.preprod`, `agent/.state/preprod/`)는 노트북에서 tgz로 받아 이 PC에
+풀었고 배포 주소(`aef19243...`)가 §2 기록과 일치함을 확인했습니다. WSL2/Docker Desktop은 사용자가
+관리자 권한으로 설치 진행 중 — 끝나면 §6대로 Compact CLI 설치, `compile:zk`, 실제 멀티 프로세스
+검증으로 이어갑니다.
+
 ## 7. 이력
 
 - 2026-09-13 (ethan): 클론, 환경 점검, 웹 빌드 확인, 이 문서 작성.
@@ -137,3 +173,8 @@ Preprod 배포 정보 (커밋 da18af3 메시지 기준):
   "Per-company agents" / "Running as a single-company agent" 절 추가. typecheck로 새 에러
   없음 확인(기존 `managed/` 부재 에러만 남음). 실제 멀티 프로세스 실행 검증은 WSL2/Docker
   대기 중.
+- 2026-09-13 (ethan, 새 PC): `C:\dev\veilance`에 새로 클론(다른 PC), baseline 재현 확인(§5와
+  동일 결과). 노트북에서 `veilance-preprod-state.tgz`를 받아 `agent/`에 풀어 Preprod 상태 이전
+  완료(§6-1). 마일스톤 1 코드를 실행 전에 전수 리뷰해서 크로스 에이전트 참조 버그 2건 발견 후
+  수정(§6-1): issue/transfer의 recipient 파티 ID 해석, `admin` 비호스팅 에이전트의 공개 원장 읽기
+  4곳. WSL2/Docker Desktop은 사용자가 관리자 권한으로 설치 진행 중.
