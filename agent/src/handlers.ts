@@ -480,8 +480,14 @@ export const getDisclosurePreview = (op: "issue" | "transfer" | "attest", profil
 // ---------------------------------------------------------------------------
 
 export const createChallenge = (profile: VerifierProfileName, holder: PartyName): StoredChallenge => {
-  const holderParty = appState.partyOrThrow(holder);
-  const holderPartyId = pureCircuits.partyIdOf(fromHex(holderParty.file.partySecret));
+  // resolvePartyId, not appState.partyOrThrow: holder's partyId is public
+  // once known (it's a one-way hash of their secret, and the challenge/
+  // attestationKey derived from it are meant to be handed to a verifier who
+  // never holds anyone's secret) — see resolvePartyId's doc comment and
+  // HANDOFF.md §4-2. Computing it from a local secret this process happens
+  // to hold was never necessary and blocked a holder-less verifier agent
+  // from creating challenges for parties it doesn't host.
+  const holderPartyId = fromHex(resolvePartyId(holder));
   const challenge = randomHex32();
   const attestationKey = toHex(
     pureCircuits.attestationKeyOf(fromHex(challenge), holderPartyId, PROFILE_CODE[profile]),
@@ -508,8 +514,13 @@ export const listOpenChallenges = async (holder: PartyName): Promise<StoredChall
   if (forHolder.length === 0) return [];
   if (!appState.contractAddress) return sortNewestFirst(forHolder);
 
-  const holderParty = appState.partyOrThrow(holder);
-  const ledger = await currentLedger(holderParty.party.providers, appState.contractAddress);
+  // anyPartyOrThrow, not partyOrThrow(holder): this is a public ledger read
+  // (attestations are keyed by attestationKey, not by which party's
+  // provider fetched them), so any hosted party's provider works — see
+  // appState.anyPartyOrThrow's doc comment. Requiring `holder` specifically
+  // broke this for every agent that doesn't host that party (milestone 2,
+  // HANDOFF.md §4).
+  const ledger = await currentLedger(appState.anyPartyOrThrow().party.providers, appState.contractAddress);
   const currentPolicyVersion = ledger.policyVersion.toString();
 
   const open = forHolder.filter((ch) => {
@@ -537,11 +548,16 @@ export const getVerifyResult = async (
   holder: PartyName,
   profile: VerifierProfileName,
 ): Promise<VerifyResult> => {
-  const holderParty = appState.partyOrThrow(holder);
-  const holderPartyId = pureCircuits.partyIdOf(fromHex(holderParty.file.partySecret));
+  // resolvePartyId + anyPartyOrThrow, not partyOrThrow(holder) — see
+  // createChallenge's and listOpenChallenges's identical comments just
+  // above. This is the endpoint the web UI's verifier card actually polls,
+  // so it was the most visible instance of milestone 2's bug: a verifier
+  // agent hosting none of the four demo parties could not check anyone's
+  // compliance status at all.
+  const holderPartyId = fromHex(resolvePartyId(holder));
   const attestationKey = pureCircuits.attestationKeyOf(fromHex(challengeHex), holderPartyId, PROFILE_CODE[profile]);
 
-  const ledger = await currentLedger(holderParty.party.providers, appState.contractAddressOrThrow());
+  const ledger = await currentLedger(appState.anyPartyOrThrow().party.providers, appState.contractAddressOrThrow());
   const currentPolicyVersion = ledger.policyVersion.toString();
   const privateFields = disclosurePreview("attest", profile).private;
 

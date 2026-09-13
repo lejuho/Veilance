@@ -81,6 +81,40 @@ Job {
 - `POST /verify/challenges` `{ profile, holder: PartyName }` → `{ challenge: hex, attestationKey: hex, profile, holder, createdAt }` — generates a 32-byte CSPRNG challenge and precomputes `attestationKeyOf(challenge, holderPartyId, profileCode)` via pureCircuits. Stored locally so the UI can list them.
 - `GET  /verify/challenges` → list.
 - `GET  /verify/:challenge?holder=&profile=` → `{ status: "PENDING"|"PASSED"|"STALE", attestation?: { profile, policyVersion }, currentPolicyVersion, predicates: [{ key, label, passed: boolean|null }], private: string[] }`. STALE = attestation exists but policyVersion ≠ current. Predicates per profile follow spec.md §4.2.3.
+- All three routes above resolve `holder`'s partyId via `resolvePartyId` (local secret if hosted, else `registry.json`'s public `parties` directory) and read the ledger via `appState.anyPartyOrThrow()` (any hosted party's provider — this is a public read), not `holder`'s own provider specifically — see the "independent verifier" addendum below for why that distinction matters and `src/cli/verify-independent.ts` for a version that skips this HTTP API (and any running agent) entirely.
+
+## Independent verification (v1.3 addendum — no agent required at all)
+
+The three `/verify/*` routes above run *inside* a Party Agent process, so
+using them still means trusting that process. `src/cli/verify-independent.ts`
+is the standalone version: a script an OEM or regulator runs on their own
+machine, needing only
+
+- the network's public indexer GraphQL endpoint (`indexerPublicDataProvider`
+  built from two URLs — no wallet, no proof server, no party secret, no
+  agent process of any kind, running or otherwise);
+- `registry.json`'s public `parties` directory, for the holder's partyId;
+- the compiled contract's public `pureCircuits`/`ledger` decoder — an open
+  build artifact anyone can reproduce from `src/veilance.compact` with
+  `compact compile +0.31.1`, not something only the demo agent has.
+
+```bash
+cd agent
+set -a && . ./.env.preprod && set +a   # or export VEILANCE_INDEXER_HTTP_URL/_WS_URL yourself
+npx tsx src/cli/verify-independent.ts batteryMfr procurement <challengeHex>
+```
+
+Prints the same `{ status, attestation?, currentPolicyVersion, predicates }`
+shape as `GET /verify/:challenge`, computed from a direct indexer read.
+Verified on Preprod (2026-09-13, HANDOFF.md §0): with every local Party
+Agent process stopped, this script alone reproduced the exact PASSED verdict
+and predicate table the web UI shows for an existing attestation, and
+correctly reported PENDING for an unseen challenge.
+
+Not handled yet: authenticating that the `holder` name a caller supplies is
+who they claim (same caveat as every other party name in this demo — see
+README.md's "demo scope" section) and a UI wrapper around this script (it's
+CLI-only for now).
 
 ## Notes for implementers
 
