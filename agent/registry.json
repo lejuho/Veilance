@@ -30,10 +30,10 @@
 
   "materials": ["Cobalt"],
 
-  "_parties_comment": "Public directory of each party's on-chain partyId (a one-way hash of its secret, never the secret itself). Only needed once agents run separated (AGENT_PARTIES, one party per process, see HANDOFF.md §4 / README.md 'Running as a single-company agent') — a demo/Preprod agent that hosts every party computes partyId locally instead and ignores this. Fill in a party's entry by running `npx tsx src/cli/print-identity.ts` on the agent that actually holds that party's secret and pasting its output here; every other agent that certifies suppliers then reads it from here. Empty until the Compact toolchain (needed to compute the hash) is available on a machine holding the real secrets — see HANDOFF.md §6.",
+  "_parties_comment": "Public directory of each party's on-chain partyId (a one-way hash of its secret, never the secret itself). Only needed once agents run separated (AGENT_PARTIES, one party per process, see HANDOFF.md §4 / README.md 'Running as a single-company agent') — a demo/Preprod agent that hosts every party computes partyId locally instead and ignores this. Fill in a party's entry by running `npx tsx src/cli/print-identity.ts` on the agent that actually holds that party's secret and pasting its output here; every other agent that certifies suppliers then reads it from here. Filled in 2026-09-13 from the real Preprod .state/preprod secrets once the Compact toolchain became available (HANDOFF.md §0) and verified end to end across three separate processes.",
   "parties": {
-    "mine": {},
-    "refiner": {},
-    "batteryMfr": {}
+    "mine": { "partyId": "702e0d3dcc59a9a9ba4d10cc594643f9a4ec56246f651dca8c7bc71ecc65b1f0" },
+    "refiner": { "partyId": "69fc4ae57b7a45fbab5e5f33d4ace8a7c6bbbebbf8d307e3cfb045e8d19f0885" },
+    "batteryMfr": { "partyId": "ec6834f57ad48572a2a5fd27f8ca86a8bdb4e2841670399aff39d0cb145f2a80" }
   }
 }

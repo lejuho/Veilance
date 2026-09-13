@@ -3,6 +3,70 @@
 작업자 교대용 요약. 다음 사람은 이 문서와 `README.md`만 읽고 시작할 수 있어야 합니다.
 새 작업을 마칠 때마다 아래 "현재 상태"와 "다음 할 일"을 갱신하고 커밋합니다.
 
+## 0. 최신 소식 (2026-09-13, ethan) — 마일스톤 1 실검증 완료 🎉
+
+이전까지 유일한 블로커였던 WSL2/Docker가 사용자 쪽에서 설치 완료됐고, 그 뒤로 이어서:
+
+1. **WSL2 Ubuntu + Docker Desktop 설치 확인.** `wsl --install -d Ubuntu`는 최초 실행 시
+   유닉스 사용자명/비밀번호를 상호작용으로 입력해야 해서 자동화된 셸에서는 멈춘다 —
+   사용자가 직접 Ubuntu 앱을 열어 완료해야 함(계정: `user`/`user`).
+2. **Compact CLI 설치 + `compile:zk` 완주.** WSL Ubuntu 안에 `compact-installer.sh` 설치 후
+   `compact update --no-set-default 0.31.1`로 pinned 버전 설치, `compact compile +0.31.1
+   src/veilance.compact src/managed/veilance` 실행 — 9개 회로 전부 prover/verifier key
+   생성 성공 (`unzip`/`zip` 패키지가 없으면 `compact update`의 아티팩트 추출이 실패하니
+   먼저 `apt-get install unzip zip` 필요). 이걸로 `contract`/`agent` typecheck, `npm test`
+   (27개), `e2e:dry-run`이 전부 처음으로 로컬에서 통과함.
+3. **증명 서버 컨테이너 기동.** `docker run -d -p 6300:6300 midnightntwrk/proof-server:8.1.0`
+   (인자 없이 기본값 사용 — 이 이미지 버전은 `--network` 플래그가 없고 `--num-workers` 등만
+   받음). `/version` → `8.1.0` 확인.
+4. **`print-identity.ts`로 실제 partyId 계산 → `registry.json` 채움.** mine/refiner/
+   batteryMfr 세 파티 전부 계산 성공, `registry.json`의 `parties` 디렉터리에 기록.
+5. **🐛 실제 버그 발견 및 수정: `agent/node_modules`가 심볼릭 링크가 아니라 진짜 별도
+   설치였다.** `stat -c '%i'`로 확인하면 `agent/node_modules`와 `contract/node_modules`의
+   inode가 서로 달랐고(내용은 동일한 패키지 셋), Windows `dir`로 봐도 `<DIR>`이지
+   `<JUNCTION>`이 아니었다 — 즉 예전에 "`ln -s` 성공"이라고 기록된 것은 실제로는 진짜
+   심볼릭 링크가 아니라 (이 환경의 git-bash `ln -s`가 심볼릭 링크 권한 없이 조용히
+   실패하거나 다른 동작을 한 것으로 보임) 완전히 별도인 두 번째 설치본이었다. `agent/src/
+   routes.ts`·`contractSetup.ts`가 `@midnight-ntwrk/ledger-v8`·`midnight-js-contracts`를
+   직접 import하므로, 이 파일들은 (contract/ 쪽 코드와 달리) **agent/node_modules를 우선
+   해석**한다 — 그 결과 컨트랙트가 만든 `ContractState`와 agent 쪽 `midnight-js-contracts`가
+   서로 다른 두 개의 로드된 클래스 인스턴스가 되어 `instanceof` 검사가 깨진다. 증상: 지갑
+   동기화·원장 읽기(`/health`, `/parties`, `/ledger`)는 멀쩡한데, 실제 회로 호출
+   (`POST /parties/:party/issue`)만 즉시(1초 내) `"'contractState' parameter ContractState
+   (...) has unexpected type"` 에러로 실패. **고친 방법**: git-bash `ln -s`는 신뢰하지 말고
+   PowerShell에서 `Remove-Item -Recurse -Force agent/node_modules` 후
+   `cmd /c mklink /J agent\node_modules contract\node_modules`(NTFS 디렉터리 junction —
+   관리자 권한 불필요)로 교체. `Get-Item agent/node_modules | Select LinkType`으로
+   `Junction`이 뜨는지 반드시 확인. **이 PC에서 심볼릭 링크를 다시 만들 일이 있으면
+   앞으로도 `ln -s` 대신 이 방법을 쓸 것.**
+6. **마일스톤 1 실제 멀티 프로세스 검증 완료.** `AGENT_PARTIES=mine`(:4001),
+   `=refiner`(:4002), `=batteryMfr`(:4003) 세 개의 완전히 분리된 `npx tsx src/index.ts`
+   프로세스를 같은 `.env.preprod`/같은 배포 주소로 띄워서:
+   - 각자 자기 파티만 `/parties`에 노출됨, `/health` ready:true 확인.
+   - `/ledger`, `/ledger/policy`가 admin을 안 호스팅하는 프로세스에서도 정상 동작
+     (`anyPartyOrThrow` 수정 확인).
+   - `/graph`는 admin을 안 호스팅하는 프로세스에서 의도대로 실패함(`unknown or
+     not-yet-built party: admin`) — 이건 버그가 아니라 구조적 한계: `buildGraph()`가
+     전체 그래프의 모든 노드(각 파티의 로컬 보유 자격증명 개수 등 private 데이터)를
+     그리려면 네 파티 전부의 시크릿이 필요함. 단일 회사 에이전트의 진짜 그래프 뷰는
+     마일스톤 2(검증자가 indexer를 직접 읽음) 이후에나 의미가 생김 — 지금 더 손대지 않음.
+   - **실제 발급 성공**: mine(4001) → refiner(4002)로 `POST /parties/mine/issue`
+     (recipient가 이 프로세스에 없는 파티) — `stage: confirmed`, 실제 txHash/blockHeight.
+     refiner(4002)에서 `POST /parties/refiner/scan` → 자기 키로 정상 복호화해 새
+     자격증명 수신 확인.
+   - **실제 전달 성공**: refiner(4002) → batteryMfr(4003)로
+     `POST /parties/refiner/credentials/:id/transfer` — `stage: confirmed`.
+     batteryMfr(4003)에서 scan → 정상 수신 확인.
+   - 즉 mine→refiner→batteryMfr 전체 체인이 **세 개의 진짜 별도 OS 프로세스**로,
+     서로의 시크릿 없이, `registry.json`의 공개 partyId 디렉터리만으로 완전히 동작함을
+     Preprod 실체인에서 확인. 마일스톤 1의 "아직 실제 멀티 프로세스로 돌려서 검증은
+     못 했습니다"가 이제 해소됨.
+   - 작업 전 `agent/.state/preprod`를 `preprod.backup-20260913-164438`로 백업해둠
+     (gitignored, 필요 없어지면 지워도 됨).
+
+**다음(미착수)**: 마일스톤 2(검증자가 indexer를 직접 읽는 독립 검증), 마일스톤 3
+(Evidence 드로어에 회로명/verifier key/증명 시간 노출). §4 참고.
+
 ## 1. 한 줄 요약
 
 주호님이 커밋 `9324bf2`로 **진짜 `agent/`, `agent/API.md`, `CONTRACT_DESIGN.md`, `ERD.md`,
@@ -42,10 +106,19 @@ Preprod 배포 정보 (커밋 da18af3 메시지 기준):
 
 ## 3. `agent/`를 처음 열어보는 사람에게
 
-- **`npm install`을 하지 마세요.** `agent/node_modules`는 `contract/node_modules`의 심볼릭
-  링크입니다 (WASM 런타임 클래스가 두 곳에 따로 설치되면 `expected instance of StateValue` 오류가
-  납니다). 최초 1회 직접 만듭니다: `ln -s "$(pwd)/contract/node_modules" agent/node_modules`
-  (Windows에서도 관리자 권한 없이 됐습니다, git-bash 기준).
+- **`npm install`을 하지 마세요.** `agent/node_modules`는 `contract/node_modules`와 같은
+  디렉터리를 가리켜야 합니다 (WASM 런타임 클래스가 두 곳에 따로 설치되면 회로 호출 시
+  `"'contractState' parameter ContractState (...) has unexpected type"` 오류가 납니다 —
+  §0-5에서 실제로 겪은 문제). **Windows에서는 git-bash `ln -s`를 신뢰하지 마세요** — 심볼릭
+  링크 권한이 없으면 조용히 실패하거나 진짜 별도의 디렉터리를 만들어버릴 수 있고, 이러면
+  `ls`로는 정상처럼 보입니다. 대신 PowerShell에서 다음으로 만들고 `LinkType`이 `Junction`인지
+  확인하세요:
+  ```powershell
+  Remove-Item agent\node_modules -Recurse -Force -Confirm:$false  # 있다면(진짜 디렉터리인 경우만)
+  cmd /c mklink /J agent\node_modules contract\node_modules
+  Get-Item agent\node_modules | Select-Object LinkType   # "Junction"이어야 함
+  ```
+  (WSL/Linux/macOS라면 기존 `ln -s "$(pwd)/contract/node_modules" agent/node_modules`로 충분.)
 - 실행: `cd agent && npm run dev` (또는 `npm start`). `GET /health`가 즉시 `ready:false`로
   응답하고 부팅이 끝나면 `true`가 됩니다.
 - 계약은 자동 배포되지 않습니다. `POST /deploy`를 직접 호출해야 하고(기존 배포가
@@ -68,15 +141,14 @@ Preprod 배포 정보 (커밋 da18af3 메시지 기준):
 
 다음 계획, 이 순서대로:
 
-1. **기업별 agent 분리** — 각 기업 화면에 자기 lot만 보이게. **코드 작업 완료(2026-09-13,
-   ethan)**: `agent/`에 `AGENT_PARTIES`(호스팅할 파티 제한), `AGENT_CONTRACT_ADDRESS`(admin이
-   아닌 agent가 기존 배포에 붙기), `registry.json`의 `parties` 공개 디렉터리 +
-   `src/cli/print-identity.ts`(다른 agent에 자기 partyId를 알려주는 스크립트)를 추가했습니다.
-   상세는 `agent/API.md`의 "Per-company agents" 절과 `agent/README.md`의 "Running as a
-   single-company agent" 절 참고. **아직 실제 멀티 프로세스로 돌려서 검증은 못 했습니다** —
-   `print-identity.ts`가 컴파일된 컨트랙트(`pureCircuits.partyIdOf`)를 필요로 해서 Compact
-   툴체인(6절)이 먼저 있어야 합니다. `npx tsc --noEmit`으로 새 코드 자체에 새 에러가 없는 것만
-   확인했습니다(기존에 있던 `managed/` 부재 에러 외 추가 에러 없음).
+1. **기업별 agent 분리** — 각 기업 화면에 자기 lot만 보이게. **완료 + 실제 멀티 프로세스
+   검증 완료(2026-09-13, ethan, §0 참고)**: `agent/`에 `AGENT_PARTIES`(호스팅할 파티 제한),
+   `AGENT_CONTRACT_ADDRESS`(admin이 아닌 agent가 기존 배포에 붙기), `registry.json`의
+   `parties` 공개 디렉터리 + `src/cli/print-identity.ts`(다른 agent에 자기 partyId를 알려주는
+   스크립트)를 추가했고, 실제 partyId를 계산해 `registry.json`에 채운 뒤 mine/refiner/
+   batteryMfr을 각각 별도 포트의 완전히 분리된 프로세스로 띄워 Preprod에서 발급→전달
+   전체 체인이 서로의 시크릿 없이 동작함을 확인했습니다. 상세는 `agent/API.md`의
+   "Per-company agents" 절과 `agent/README.md`의 "Running as a single-company agent" 절 참고.
 2. **검증자가 indexer를 직접 읽는 독립 검증** — 지금은 verify 엔드포인트도 데모 agent를 거침.
    검증자(OEM/규제기관)가 agent를 신뢰하지 않고 indexer에서 직접 증명 상태를 읽을 수 있게.
    **미착수.**
@@ -88,7 +160,7 @@ Preprod 배포 정보 (커밋 da18af3 메시지 기준):
 | 검증 | 결과 |
 | --- | --- |
 | `git fetch` + merge로 주호님의 `9324bf2` 반영 | 완료, 충돌 없음 |
-| `agent/node_modules` 심볼릭 링크 생성 | 성공 (관리자 권한 불필요, git-bash `ln -s`) |
+| `agent/node_modules` 심볼릭 링크 생성 | 성공이라 기록했었으나 **오기록이었음** — 실제로는 진짜 별도 디렉터리였고 §0-5에서 발견/수정 |
 | `agent`: `npx tsc --noEmit` | `contract/src/managed/` 부재로 인한 에러만 발생 (예상된 것, compile:zk 실행하면 해결될 것) |
 | `web`: `npm ci`, `npm run typecheck`, `npm run build` | 모두 통과 |
 | `contract`: `npm ci` | 통과 |
@@ -100,20 +172,16 @@ Preprod 배포 정보 (커밋 da18af3 메시지 기준):
 
 ## 6. 다음 할 일 (제안, 우선순위 순)
 
-- [ ] **사용자가 직접**: 관리자 PowerShell에서 `wsl --install -d ubuntu` 실행 → 재부팅 → Ubuntu
-      최초 설정(유닉스 사용자명/비밀번호). 같은 창에서 `winget install -e --id Docker.DockerDesktop`
-      도 같이 설치하고, Docker Desktop 설정에서 WSL integration을 Ubuntu에 대해 켜기.
-- [ ] 그다음(제가 이어서 진행 가능): WSL 안에서 Compact CLI 설치
-      (`curl --proto '=https' --tlsv1.2 -LsSf https://github.com/midnightntwrk/compact/releases/latest/download/compact-installer.sh | sh`),
-      `contract`에서 `npm run compile:zk`, 증명 서버 컨테이너 기동.
+- [x] WSL2 Ubuntu + Docker Desktop 설치 (사용자가 직접, 2026-09-13).
+- [x] WSL Ubuntu 안에 Compact CLI 설치 + `compile:zk` 완주 (2026-09-13, ethan — §0 참고).
+- [x] 증명 서버 컨테이너 기동, `/version` 8.1.0 확인 (2026-09-13, ethan).
 - [x] 4절 마일스톤 1번(기업별 agent 분리) 코드 작업 — `AGENT_PARTIES`, `AGENT_CONTRACT_ADDRESS`,
-      registry `parties` 디렉터리, `print-identity.ts`. 위 WSL/Docker와 무관하게 진행함.
-- [ ] WSL2/Docker가 준비되면: `print-identity.ts`로 기존 Preprod `.state/preprod/{mine,refiner,
-      batteryMfr}`의 실제 partyId를 계산해 `registry.json`에 채우고, 세 파티를 각자 다른 포트의
-      별도 프로세스로 띄워(`AGENT_PARTIES=mine`, `=refiner`, `=batteryMfr`, admin은 네 번째) 기업별
-      분리가 실제로 동작하는지 검증. 지금 `.state/preprod/`는 한 프로세스가 네 파티를 다 호스팅하는
-      전제로 만들어졌으므로 그대로 재사용 가능(디렉터리만 나누면 됨, 시크릿 재발급 불필요).
-- [ ] 1번 검증이 끝나면 2번(검증자 독립 검증), 3번(Evidence 드로어) 순서로 착수.
+      registry `parties` 디렉터리, `print-identity.ts`.
+- [x] `print-identity.ts`로 실제 partyId 계산 → `registry.json`에 채움, mine/refiner/batteryMfr을
+      각각 별도 포트의 완전히 분리된 프로세스로 띄워 Preprod에서 발급→전달 전체 체인 검증 완료
+      (2026-09-13, ethan — §0 참고). 이 과정에서 `agent/node_modules` 심볼릭 링크 버그를
+      발견/수정함(§0-5).
+- [ ] 다음: 마일스톤 2(검증자 독립 검증), 마일스톤 3(Evidence 드로어) 순서로 착수.
 
 ## 6-1. 이 PC(새 PC, ethan)로 옮긴 뒤 발견해서 고친 것 (2026-09-13)
 
@@ -178,3 +246,11 @@ Preprod 상태(`agent/.env.preprod`, `agent/.state/preprod/`)는 노트북에서
   완료(§6-1). 마일스톤 1 코드를 실행 전에 전수 리뷰해서 크로스 에이전트 참조 버그 2건 발견 후
   수정(§6-1): issue/transfer의 recipient 파티 ID 해석, `admin` 비호스팅 에이전트의 공개 원장 읽기
   4곳. WSL2/Docker Desktop은 사용자가 관리자 권한으로 설치 진행 중.
+- 2026-09-13 (ethan): 사용자가 WSL2 Ubuntu + Docker Desktop 설치 완료. 이어서 WSL Ubuntu에
+  Compact CLI 설치, `compile:zk` 최초 완주(9개 회로), 증명 서버 컨테이너 기동,
+  `print-identity.ts`로 실제 partyId 계산해 `registry.json` 채움. mine/refiner/batteryMfr을
+  세 개의 완전히 분리된 프로세스로 Preprod에 붙여 발급(mine→refiner)과 전달(refiner→
+  batteryMfr) 전체 체인이 서로의 시크릿 없이 동작함을 확인 — 마일스톤 1 완전 검증. 이 과정에서
+  `agent/node_modules`가 (예전 기록과 달리) 진짜 심볼릭 링크가 아니라 별도 설치본이었던 버그를
+  발견, PowerShell `mklink /J`로 교체해 수정(회로 호출이 `ContractState has unexpected type`로
+  실패하던 근본 원인). 전체 내용은 §0 참고. 다음은 마일스톤 2(검증자 독립 검증).
