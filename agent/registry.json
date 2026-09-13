@@ -1,0 +1,32 @@
+{
+  "_comment": "L3 label data only — never derived from chain. originId/certId hex values here are just deterministic UTF-8-padded Bytes<32> (same encoding as contract/e2e/run.ts's bytes32() helper), not secrets. POST /admin/origins with a new label appends a runtime entry to agent/.state/registry-runtime.json (gitignored), merged over this seed at read time — this file itself is never mutated by the running agent.",
+
+  "orgs": {
+    "admin": "Admin",
+    "mine": "Congo Mine Co.",
+    "refiner": "EuroRefine GmbH",
+    "batteryMfr": "VoltCell Battery"
+  },
+
+  "suppliers": {
+    "mine": {
+      "certId": "7665696c616e63652d6167656e743a636572743a6d696e650000000000000000",
+      "certLabel": "Congo Mine Co. — Origin Certification"
+    },
+    "refiner": {
+      "certId": "7665696c616e63652d6167656e743a636572743a726566696e65720000000000",
+      "certLabel": "EuroRefine GmbH — Responsible Refining Certification"
+    },
+    "batteryMfr": {
+      "certId": "7665696c616e63652d6167656e743a636572743a626174746572794d66720000",
+      "certLabel": "VoltCell Battery — Supplier Certification"
+    }
+  },
+
+  "defaultOrigin": {
+    "originId": "7665696c616e63652d6167656e743a6f726967696e3a6472632d6d696e652d78",
+    "label": "DRC Mine X"
+  },
+
+  "materials": ["Cobalt"]
+}
