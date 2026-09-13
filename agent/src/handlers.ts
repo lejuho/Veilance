@@ -17,7 +17,7 @@ import { appState } from "./appState.js";
 import { deployVeilance, findVeilance } from "./contractSetup.js";
 import { enqueueJob } from "./jobs.js";
 import { registry } from "./registry.js";
-import { PARTY_NAMES, type PartyName } from "./config.js";
+import { HOSTED_PARTIES, type PartyName } from "./config.js";
 import { savePartyFile, saveDeployment, saveChallenges } from "./state.js";
 import { predicatesFor, emptyPredicates, type Predicate } from "./predicates.js";
 import { disclosurePreview } from "./disclosure.js";
@@ -55,7 +55,7 @@ export const startDeployJob = (): Job =>
     const contractAddress = deployed.deployTxData.public.contractAddress;
     admin.contract = deployed;
 
-    for (const name of PARTY_NAMES) {
+    for (const name of HOSTED_PARTIES) {
       if (name === "admin") continue;
       const p = appState.partyOrThrow(name);
       p.party.providers.privateStateProvider.setContractAddress(contractAddress);
@@ -89,13 +89,33 @@ export const startCertifyOriginJob = (label: string, originIdHex?: string): { jo
   return { job, originId };
 };
 
+/**
+ * The party being certified need not be hosted by this process: admin
+ * certifies OTHER companies' partyId, which in a separated deployment lives
+ * only in their own agent's `.state/`. If this process hosts that party
+ * (today's demo, or an admin+company combo agent), its partyId is computed
+ * locally as before. Otherwise it comes from `registry.json`'s `parties`
+ * directory — see registry.ts and `agent/src/cli/print-identity.ts`, which
+ * prints the (partyId, certId) pair a company pastes in there once.
+ */
+const resolvePartyId = (partyName: PartyName): string => {
+  const hosted = appState.parties.get(partyName);
+  if (hosted) return toHex(pureCircuits.partyIdOf(fromHex(hosted.file.partySecret)));
+  const known = registry.partyId(partyName);
+  if (known) return known;
+  throw new Error(
+    `partyId for "${partyName}" is unknown: this agent doesn't host it (AGENT_PARTIES) and it isn't in ` +
+      `registry.json's "parties" directory. Run "npx tsx src/cli/print-identity.ts" on ${partyName}'s own ` +
+      `agent and add the printed partyId to registry.json, or host it on this agent.`,
+  );
+};
+
 export const startCertifySupplierJob = (
   partyName: PartyName,
   certIdHex?: string,
   certLabel?: string,
 ): Job => {
-  const target = appState.partyOrThrow(partyName);
-  const partyId = pureCircuits.partyIdOf(fromHex(target.file.partySecret));
+  const partyId = fromHex(resolvePartyId(partyName));
   const certId = certIdHex ?? registry.supplierCertId(partyName) ?? randomHex32();
   const label = certLabel ?? registry.supplierCertLabel(partyName);
 
@@ -151,7 +171,7 @@ export const startBootstrapJobs = (): Job[] => {
     jobs.push(startCertifySupplierJob(name));
   }
   jobs.push(startSetCarbonThresholdJob(5));
-  for (const name of PARTY_NAMES) jobs.push(startRegisterEncKeyJob(name));
+  for (const name of HOSTED_PARTIES) jobs.push(startRegisterEncKeyJob(name));
   return jobs;
 };
 

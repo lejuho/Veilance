@@ -25,11 +25,12 @@ Veilance issues and transfers provenance credentials along a mine → refiner �
 
 ```text
 web/       React + Vite + TypeScript UI, HTTP and mock API adapters
+agent/     Party Agent: the HTTP backend the UI connects to (Midnight SDK, shares contract/node_modules)
 contract/  Compact contract, witnesses, encryption helpers, and tests
 shared/    Company graph scoping and tests
 ```
 
-This repository includes the web UI, contract, and standalone E2E script. The UI runs directly in mock mode. The Party Agent service used by the HTTP adapter is not included, so connecting the UI to a real chain requires a separate compatible backend. Contract scenarios can run directly through `contract/e2e/`.
+This repository includes the web UI, the Party Agent, the contract, and a standalone E2E script. The UI runs directly in mock mode; to connect it to a real chain, run `agent/` against a local devnet (or Preprod) and point the UI at it. Contract scenarios can run directly through `contract/e2e/`.
 
 ## Quick start: mock UI
 
@@ -67,14 +68,24 @@ npm run e2e
 
 `compile:zk` generates proving keys needed for actual chain execution. `e2e:dry-run` checks keys and provider setup without network calls. `e2e` runs admin initialization → mine issuance → refiner transfer → battery manufacturer attestations → double-use rejection against the real chain.
 
-### 3. Connect the UI to an external backend (optional)
+### 3. Run the Party Agent and connect the UI
 
-If you have a separate compatible Party Agent, you can use the UI's HTTP adapter. The address below is an example of an independently running service.
+`agent/` holds the four demo parties' keys and wallets in one process and calls the contract on their behalf. `agent/node_modules` is a symlink to `contract/node_modules` (this avoids a second copy of the WASM runtime, so `agent` has no independent install step) — create it once after the contract is installed and `compile:zk` has produced the proving keys.
+
+```bash
+ln -s "$(pwd)/contract/node_modules" agent/node_modules   # once
+cd agent
+npm run dev                # http://localhost:4000, watch /health (ready:false -> true)
+curl -X POST http://localhost:4000/deploy            # deploy the contract (or reconnect to an existing one)
+curl -X POST http://localhost:4000/admin/bootstrap   # register the demo policy: origin, 3 supplier certs, threshold, 4 inbox keys
+```
 
 ```bash
 cd web
 VITE_MOCK=0 VITE_API_URL=http://localhost:4000 npm run dev
 ```
+
+Network selection uses the same `VEILANCE_*` variables as the E2E script. See the [agent guide](agent/README.md) and [API](agent/API.md) for connecting to Preprod and detailed run/verification transcripts.
 
 The required interface is defined in the [API client](web/src/api/client.ts) and [HTTP adapter](web/src/api/http.ts).
 
@@ -83,6 +94,8 @@ The required interface is defined in the [API client](web/src/api/client.ts) and
 | Variable | Default / purpose |
 | --- | --- |
 | `VITE_API_URL` | Unset selects mock mode; set to the Agent URL for a real connection |
+| `PORT` | Agent only. HTTP port, default 4000 |
+| `CORS_ORIGIN` | Agent only. Comma-separated allowed origins, defaults to the local web UI |
 | `VITE_MOCK` | `1` or `true` forces mock mode |
 | `VEILANCE_NETWORK_ID` | Default `undeployed` |
 | `VEILANCE_NODE_URL` / `VEILANCE_NODE_WS_URL` | Default `http://localhost:9944` / `ws://localhost:9944` |
@@ -99,6 +112,7 @@ Run these commands from the repository root:
 ```bash
 (cd contract && npm test && npm run typecheck)
 (cd web && npm run build)
+(cd agent && npm run typecheck)
 node --import ./contract/node_modules/tsx/dist/loader.mjs shared/graphScope.test.ts
 
 # Check proving keys and provider setup without network calls
@@ -119,8 +133,9 @@ The public ledger contains commitments, nullifiers, policies, attestations, and 
 ## Documentation
 
 - [Web guide](web/README.md)
+- [Agent guide](agent/README.md) · [Agent API](agent/API.md)
 - [E2E guide](contract/e2e/README.md)
 - [Contract source](contract/src/veilance.compact)
 - [Company graph scoping](shared/graphScope.ts)
 
-Component documents also contain historical designs and references to services not included in this repository. Use each package's `package.json` and source code as the reference for commands and dependencies.
+Component documents also contain historical designs. Use each package's `package.json` and source code as the reference for commands and dependencies.

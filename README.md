@@ -25,11 +25,12 @@ Veilance는 광산 → 정제사 → 배터리 제조사로 이어지는 원자�
 
 ```text
 web/       React + Vite + TypeScript 웹 UI, HTTP/모의 API 어댑터
+agent/     Party Agent: 웹 UI가 연결하는 HTTP 백엔드 (Midnight SDK, contract/node_modules 공유)
 contract/  Compact 컨트랙트, witness, 암호화 유틸리티, 테스트
 shared/    기업별 그래프 범위 처리와 테스트
 ```
 
-이 저장소에는 웹 UI, 컨트랙트, 독립 실행형 E2E 스크립트가 포함됩니다. 웹 UI는 모의 모드로 바로 실행할 수 있습니다. HTTP 어댑터가 연결하는 Party Agent 서비스는 이 저장소에 포함되어 있지 않으므로, 실제 체인과 연결된 웹 UI를 사용하려면 별도의 호환 백엔드가 필요합니다. 컨트랙트의 체인 시나리오는 `contract/e2e/`에서 직접 실행할 수 있습니다.
+이 저장소에는 웹 UI, Party Agent, 컨트랙트, 독립 실행형 E2E 스크립트가 포함됩니다. 웹 UI는 모의 모드로 바로 실행할 수 있고, 실제 체인과 연결하려면 로컬 devnet(또는 Preprod)에 대해 `agent/`를 실행한 뒤 웹 UI를 그 주소에 연결합니다. 컨트랙트의 체인 시나리오는 `contract/e2e/`에서 직접 실행할 수 있습니다.
 
 ## 빠른 시작: 모의 UI
 
@@ -67,14 +68,24 @@ npm run e2e
 
 `compile:zk`는 실제 체인 실행에 필요한 증명 키를 생성합니다. `e2e:dry-run`은 네트워크 호출 없이 키와 provider 구성을 확인합니다. `e2e`는 관리자 초기화 → 광산 발행 → 정제사 전달 → 배터리 제조사 증명 → 중복 사용 거부 시나리오를 실제 체인에서 실행합니다.
 
-### 3. 웹 UI의 외부 백엔드 연결 (선택)
+### 3. Party Agent 실행과 웹 UI 연결
 
-호환되는 Party Agent를 별도로 준비한 경우 웹 UI의 HTTP 어댑터를 사용할 수 있습니다. 다음 주소는 별도로 실행 중인 서비스의 예시입니다.
+`agent/`는 네 데모 참여자의 키와 지갑을 한 프로세스에서 관리하며 컨트랙트를 대신 호출합니다. `agent/node_modules`는 `contract/node_modules`의 심볼릭 링크이며(WASM 클래스 중복 방지를 위한 설계이므로 `agent`에서 `npm install`을 따로 실행하지 않습니다), 컨트랙트 설치와 `compile:zk`가 끝난 뒤 만들어 둡니다.
+
+```bash
+ln -s "$(pwd)/contract/node_modules" agent/node_modules   # 최초 1회
+cd agent
+npm run dev                # http://localhost:4000, /health 로 부팅 진행 확인 (ready:false → true)
+curl -X POST http://localhost:4000/deploy      # 계약 배포 (또는 기존 배포에 자동 재연결)
+curl -X POST http://localhost:4000/admin/bootstrap   # 데모 정책 일괄 등록 (원산지, 공급자 인증 3건, 임계값, 수신 키 4건)
+```
 
 ```bash
 cd web
 VITE_MOCK=0 VITE_API_URL=http://localhost:4000 npm run dev
 ```
+
+네트워크 선택은 E2E 스크립트와 같은 `VEILANCE_*` 변수를 사용합니다. Preprod 등 공개 테스트넷 연결과 상세한 실행·검증 기록은 [Agent 안내](agent/README.md)와 [API 명세](agent/API.md)를 참고하세요.
 
 요구되는 인터페이스는 [API 클라이언트](web/src/api/client.ts)와 [HTTP 어댑터](web/src/api/http.ts)에 정의되어 있습니다.
 
@@ -83,6 +94,8 @@ VITE_MOCK=0 VITE_API_URL=http://localhost:4000 npm run dev
 | 변수 | 기본값 / 용도 |
 | --- | --- |
 | `VITE_API_URL` | 미설정 시 모의 모드. 실제 연결 시 Agent 주소 |
+| `PORT` | Agent 전용. HTTP 포트, 기본 4000 |
+| `CORS_ORIGIN` | Agent 전용. 허용 origin 목록(콤마 구분), 기본 로컬 웹 UI |
 | `VITE_MOCK` | `1` 또는 `true`로 모의 모드 강제 |
 | `VEILANCE_NETWORK_ID` | 기본 `undeployed` |
 | `VEILANCE_NODE_URL` / `VEILANCE_NODE_WS_URL` | 기본 `http://localhost:9944` / `ws://localhost:9944` |
@@ -99,6 +112,7 @@ VITE_MOCK=0 VITE_API_URL=http://localhost:4000 npm run dev
 ```bash
 (cd contract && npm test && npm run typecheck)
 (cd web && npm run build)
+(cd agent && npm run typecheck)
 node --import ./contract/node_modules/tsx/dist/loader.mjs shared/graphScope.test.ts
 
 # 증명 키와 provider 구성 등을 네트워크 호출 없이 확인
@@ -119,8 +133,9 @@ node --import ./contract/node_modules/tsx/dist/loader.mjs shared/graphScope.test
 ## 관련 문서
 
 - [웹 안내](web/README.md)
+- [Agent 안내](agent/README.md) · [Agent API](agent/API.md)
 - [E2E 안내](contract/e2e/README.md)
 - [컨트랙트 소스](contract/src/veilance.compact)
 - [기업별 그래프 범위 처리](shared/graphScope.ts)
 
-하위 문서에는 이전 설계 및 현재 저장소에 포함되지 않은 서비스에 대한 기록도 있습니다. 실행 명령과 의존성은 각 패키지의 `package.json` 및 소스 코드를 기준으로 확인하세요.
+하위 문서에는 이전 설계에 대한 기록도 있습니다. 실행 명령과 의존성은 각 패키지의 `package.json` 및 소스 코드를 기준으로 확인하세요.

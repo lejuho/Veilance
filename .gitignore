@@ -3,3 +3,8 @@
 # Local editor and agent settings
 /.agents/
 /.codex/
+
+# Secret bundles handed off out-of-band (wallet seeds, private state dumps).
+# These must never be committed regardless of where they're dropped.
+*.tgz
+*.tar.gz

@@ -21,11 +21,12 @@ import { buildProviders } from "../../contract/e2e/lib/providers.js";
 
 import {
   AGENT_STATE_DIR,
+  CONTRACT_ADDRESS_OVERRIDE,
   FUNDING_AMOUNT,
   FUNDER_SEED,
+  HOSTED_PARTIES,
   SHARED_FEE_WALLET,
   NETWORK_ID,
-  PARTY_NAMES,
   WALLET_SEEDS,
   type PartyName,
 } from "./config.js";
@@ -33,7 +34,7 @@ import { appState, type AppParty } from "./appState.js";
 import { fromHex, ZERO_HEX_32 } from "./bytes.js";
 import { registry } from "./registry.js";
 import { findVeilance } from "./contractSetup.js";
-import { loadDeployment, loadOrCreatePartyFile } from "./state.js";
+import { loadDeployment, loadOrCreatePartyFile, saveDeployment } from "./state.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -84,11 +85,11 @@ export const bootstrap = async (): Promise<void> => {
       if (!funder) throw new Error("VEILANCE_SHARED_FEE_WALLET=1 requires VEILANCE_FUNDER_SEED");
       appState.boot.step = "syncing the shared fee wallet (a first sync on a public network takes a long time)";
       await waitForSync(funder);
-      for (const name of PARTY_NAMES) wallets[name] = funder;
+      for (const name of HOSTED_PARTIES) wallets[name] = funder;
       appState.boot.step = "ensuring DUST on the shared fee wallet";
       await ensureDust(funder);
     } else {
-      for (const name of PARTY_NAMES) {
+      for (const name of HOSTED_PARTIES) {
         wallets[name] = await buildWallet(name, WALLET_SEEDS[name], { stateDir: walletStateDir });
       }
       appState.boot.step = "syncing wallets (a first sync on a public network takes a long time)";
@@ -96,7 +97,7 @@ export const bootstrap = async (): Promise<void> => {
 
       appState.boot.step = "funding wallets (if needed)";
       const needsFunding = [];
-      for (const name of PARTY_NAMES) {
+      for (const name of HOSTED_PARTIES) {
         const s = await waitForSync(wallets[name]);
         const night = s.unshielded.balances[ledger.unshieldedToken().raw] ?? 0n;
         if (night < FUNDING_AMOUNT / 2n) needsFunding.push(wallets[name]);
@@ -112,11 +113,11 @@ export const bootstrap = async (): Promise<void> => {
       }
 
       appState.boot.step = "ensuring DUST";
-      for (const name of PARTY_NAMES) await ensureDust(wallets[name]);
+      for (const name of HOSTED_PARTIES) await ensureDust(wallets[name]);
     }
 
     appState.boot.step = "building providers and private state";
-    for (const name of PARTY_NAMES) {
+    for (const name of HOSTED_PARTIES) {
       const providers = await buildProviders(name, wallets[name], {
         baseStateDir: AGENT_STATE_DIR,
         accountId: `agent-${name}`,
@@ -153,17 +154,24 @@ export const bootstrap = async (): Promise<void> => {
     console.log("All party wallets funded, DUST-registered, and providers built.");
 
     appState.boot.step = "reconnecting to deployed contract (if any)";
-    const deployment = loadDeployment();
+    // A single-company agent (HOSTED_PARTIES excludes "admin") never calls
+    // POST /deploy itself — it needs to be told the address admin's own
+    // agent deployed to. AGENT_CONTRACT_ADDRESS covers that: on first boot
+    // (no deployment.json yet) it's used and persisted; every later boot
+    // reads deployment.json as before, so the env var only matters once.
+    const existing = loadDeployment();
+    const deployment = existing ?? (CONTRACT_ADDRESS_OVERRIDE ? { contractAddress: CONTRACT_ADDRESS_OVERRIDE } : null);
     if (deployment) {
-      for (const name of PARTY_NAMES) {
+      for (const name of HOSTED_PARTIES) {
         const appParty = appState.partyOrThrow(name);
         appParty.party.providers.privateStateProvider.setContractAddress(deployment.contractAddress);
         appParty.contract = await findVeilance(appParty.party, deployment.contractAddress);
       }
       appState.contractAddress = deployment.contractAddress;
-      console.log(`Reconnected to existing contract at ${deployment.contractAddress}`);
+      if (!existing) saveDeployment(deployment);
+      console.log(`Reconnected to existing contract at ${deployment.contractAddress}${existing ? "" : " (from AGENT_CONTRACT_ADDRESS)"}`);
     } else {
-      console.log("No agent/.state/deployment.json yet — waiting for POST /deploy.");
+      console.log("No agent/.state/deployment.json yet and no AGENT_CONTRACT_ADDRESS set — waiting for POST /deploy.");
     }
 
     appState.boot = { ready: true, step: "ready" };

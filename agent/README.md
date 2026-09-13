@@ -671,6 +671,36 @@ task's session too (containers present but exited — same
 `docker compose ... up -d` recovery against the same persisted volumes) and
 was kept running throughout.
 
+## Running as a single-company agent (roadmap milestone 1)
+
+The demo/Preprod setup above runs one process hosting all four parties. To
+run separate agents — one per company, each holding only that company's
+secret — see `agent/API.md`'s "Per-company agents" addendum for the exact
+contract; summary:
+
+```bash
+# Company (e.g. the refiner), pointed at admin's already-deployed contract:
+cd agent
+AGENT_PARTIES=refiner AGENT_CONTRACT_ADDRESS=<address from admin's agent> PORT=4002 npm run dev
+```
+
+The company's own agent computes its `partyId` locally the first time it
+boots as that party (a random secret is generated into
+`.state/.../refiner/agent.json` on first run, same as today). For admin —
+running separately, `AGENT_PARTIES=admin` — to certify that company via
+`POST /admin/suppliers`, it needs to know that `partyId` (public once
+certified anyway, never the secret): run
+`npx tsx src/cli/print-identity.ts refiner` on the refiner's own agent and
+paste the printed `{ "parties": { "refiner": { "partyId": "..." } } }` into
+every other agent's `agent/registry.json`.
+
+This is plumbing only — `AGENT_PARTIES`/`AGENT_CONTRACT_ADDRESS` and the
+registry directory fallback in `resolvePartyId()` (handlers.ts) — not yet
+run against a live multi-process deployment: doing so needs the Compact
+toolchain (WSL2/Docker on this contributor's machine, see HANDOFF.md §6) to
+compute real `partyId` values via `print-identity.ts`, which the existing
+Preprod `.state/preprod/` bundle predates.
+
 ## Running on Midnight Preprod (public test network)
 
 The agent targets the local devnet by default. Every endpoint is an environment

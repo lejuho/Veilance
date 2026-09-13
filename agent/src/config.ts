@@ -10,6 +10,7 @@
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { PARTY_NAMES as ALL_PARTY_NAMES, type PartyName as PartyNameType } from "../../contract/e2e/lib/config.js";
 
 export {
   NETWORK_ID,
@@ -46,3 +47,41 @@ export const PORT = Number(process.env.PORT ?? 4000);
 // browser opened on 127.0.0.1 is not rejected.
 export const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "http://localhost:5173,http://127.0.0.1:5173";
 export const CORS_ORIGINS = CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean);
+
+// ---------------------------------------------------------------------------
+// Per-company agent separation (roadmap milestone 1, see HANDOFF.md §4).
+//
+// The demo runs one process hosting all four parties. In production each
+// enterprise runs its own agent hosting exactly one party (see agent/API.md's
+// opening paragraph) — `AGENT_PARTIES` is what switches between the two:
+// unset, it defaults to every party (today's demo/Preprod behavior,
+// unchanged); set to a comma-separated subset (e.g. `AGENT_PARTIES=mine`),
+// bootstrap.ts only builds wallets/providers for that subset, so this
+// process never touches the other companies' secrets. Every route that
+// resolves a party through `appState.parties` (i.e. every route except
+// `/admin/suppliers`, which also needs OTHER companies' public partyId — see
+// registry.ts's `partyId()`) is automatically scoped by this: a party this
+// process does not host is simply not in that map.
+const isKnownParty = (s: string): s is PartyNameType => (ALL_PARTY_NAMES as readonly string[]).includes(s);
+const AGENT_PARTIES_RAW = process.env.AGENT_PARTIES?.trim();
+export const HOSTED_PARTIES: readonly PartyNameType[] = AGENT_PARTIES_RAW
+  ? (() => {
+      const names = AGENT_PARTIES_RAW.split(",").map((s) => s.trim()).filter(Boolean);
+      const unknown = names.filter((n) => !isKnownParty(n));
+      if (unknown.length > 0) {
+        throw new Error(
+          `AGENT_PARTIES contains unknown part${unknown.length > 1 ? "ies" : "y"} name(s): ${unknown.join(", ")}. ` +
+            `Valid names: ${ALL_PARTY_NAMES.join(", ")}.`,
+        );
+      }
+      if (names.length === 0) throw new Error("AGENT_PARTIES is set but empty — unset it to host every party, or list at least one.");
+      return names as PartyNameType[];
+    })()
+  : ALL_PARTY_NAMES;
+
+// A single-company agent doesn't deploy the contract (only `admin` does, via
+// `POST /deploy`) — it needs to be told where the contract already lives.
+// If set and no `agent/.state/.../deployment.json` exists yet, bootstrap.ts
+// attaches every hosted party to this address and persists it, exactly as if
+// `POST /deploy` had been called locally.
+export const CONTRACT_ADDRESS_OVERRIDE = process.env.AGENT_CONTRACT_ADDRESS?.trim() || undefined;

@@ -19,10 +19,23 @@ import {
 import type { PartyName } from "./types.js";
 
 type SupplierSeed = { readonly certId: string; readonly certLabel: string };
+/** Public identity of a party this agent process may not host — see registry() below. */
+type PartyDirectoryEntry = { readonly partyId?: string };
 
 type RegistrySeed = {
   readonly orgs: Record<PartyName, string>;
   readonly suppliers: Partial<Record<PartyName, SupplierSeed>>;
+  /**
+   * Public directory of every known party's partyId (= H("veilance:id",
+   * partySecret) — never the secret itself), for `startCertifySupplierJob`
+   * (handlers.ts) to certify a company this process does not host (roadmap
+   * milestone 1, HANDOFF.md §4: per-company agent separation). Optional and
+   * empty by default — a demo/Preprod agent that hosts every party never
+   * needs it, since it computes partyId locally instead. Populate it by
+   * running `npx tsx src/cli/print-identity.ts` on the OWNER agent (the one
+   * that actually holds that party's secret) and pasting its output here.
+   */
+  readonly parties?: Partial<Record<PartyName, PartyDirectoryEntry>>;
   readonly defaultOrigin: { readonly originId: string; readonly label: string };
   readonly materials: readonly string[];
 };
@@ -80,6 +93,11 @@ export class Registry {
   /** The party's pre-agreed certId (what admin certifies it under, and what the party proves as its own). */
   supplierCertId(party: PartyName): string | undefined {
     return this.seed.suppliers[party]?.certId;
+  }
+
+  /** Public partyId for a party this process may not host — see the `parties` directory above. */
+  partyId(party: PartyName): string | undefined {
+    return this.seed.parties?.[party]?.partyId;
   }
 
   supplierCertLabel(party: PartyName): string | undefined {

@@ -89,6 +89,35 @@ Job {
 - Attack demo: the UI needs to be able to call transfer on a CONSUMED credential; the agent must not block it client-side (it warns via `disclosure-preview`/UI, but executes), so the contract assert is what rejects.
 - Labels (origin name, material name, org name) are L3 data: keep them in `agent/registry.json`, seed with demo values ("DRC Mine X", "Cobalt", org names).
 
+## Per-company agents (v1.2 addendum — one party per process)
+
+The opening paragraph's "in production each enterprise runs its own agent
+with exactly one party" is now a real config knob, not just intent:
+
+- `AGENT_PARTIES` (env, comma-separated `PartyName`s; default: all four) —
+  restricts which parties this process builds wallets/providers for and
+  serves. A party this process does not host behaves exactly as if it didn't
+  exist: `GET /parties` omits it, and any `:party` route for it errors. This
+  is the only thing that changes between the demo (unset) and a real
+  single-company deployment (`AGENT_PARTIES=mine`).
+- `AGENT_CONTRACT_ADDRESS` (env) — a single-company agent never calls
+  `POST /deploy` (only `admin` does); on first boot, with no
+  `.state/.../deployment.json` yet, this address is what it attaches its
+  hosted part(ies) to instead. Persisted after that, so the env var only
+  matters once.
+- `POST /admin/suppliers` (and `POST /admin/bootstrap`'s three
+  `certifySupplier` calls) still work when the target company isn't hosted
+  by the admin agent: its `partyId` — public once certified on-chain anyway —
+  is read from `agent/registry.json`'s `parties` directory instead of being
+  computed locally. A company populates its own entry there by running
+  `npx tsx src/cli/print-identity.ts <party>` on the agent that actually
+  holds that party's secret, and shares the printed `partyId` (never the
+  secret) for every other agent's `registry.json` to include.
+- Not handled by this addendum: authenticating who is allowed to act as a
+  hosted party over this agent's own HTTP API (still none — same caveat as
+  README.md's "demo scope" section), and how a verifier authenticates
+  reads (roadmap milestone 2, HANDOFF.md §4).
+
 ## Explorer (v1.1 addendum — public chain reads, proxied from the indexer)
 
 Local devnets have no hosted block explorer, so the agent exposes read-only
