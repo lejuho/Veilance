@@ -364,4 +364,11 @@ export const messages: Record<string, string> = {
   "수신 키": "Receiving key",
   "재활용 · EU 외": "Recycler · non-EU",
   "재활용 · EU": "Recycler · EU",
+  "시연 계정 — 누르면 바로 들어갑니다": "Demo accounts — one click to sign in",
+  "시뮬레이션 모드 — 브라우저 안에서 컨트랙트 규칙을 그대로 흉내 냅니다. 체인에는 기록되지 않습니다.": "Simulation mode — the contract's rules run in your browser. Nothing is written to a chain.",
+  "처음부터 다시": "Start over",
+  "시연: 구매사 요청 코드 받기": "Demo: receive a buyer request code",
+  "구매사에게 전달할 확인 정보입니다. 구매사는 검증 화면에 붙여 넣어 확인합니다.": "Send this to the buyer. The buyer pastes it into the verification page.",
+  "공급사가 보낸 확인 정보 JSON": "Supplier's check info JSON",
+  "공급사가 보낸 확인 정보(JSON)를 붙여 넣으면 아래 칸이 채워집니다": "Paste the check info (JSON) from the supplier to fill the fields below",
 };

@@ -14,7 +14,7 @@ export function App() {
   return (
     <WorkspaceContext.Provider value={viewer}><WorkspaceSwitchContext.Provider value={switchViewer}>
     <Routes>
-      <Route path="/" element={<Screen />} />
+      <Route path="/" element={import.meta.env.VITE_V2_DEMO === '1' ? <Navigate to="/v2" replace /> : <Screen />} />
       <Route path="/v2/*" element={<V2App />} />
       <Route path="/explorer/tx/:hash" element={<Screen explorer="tx" />} />
       <Route path="/explorer/block/:height" element={<Screen explorer={"block"} />} />

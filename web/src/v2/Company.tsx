@@ -1,10 +1,12 @@
 import { t, useI18n } from '@/lib/i18n';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button, ErrorLine, Field, Input, Select } from '@/components/ui';
 import { cx } from '@/lib/format';
 import { kg, pct, short, type AccountView, type AuditorPackage, type LotView, type Profile } from './api';
 import { v2 } from './api';
-import { JobLine, opLabel, useDirectory, useJobs, useLots, usePeriods, useRun } from './hooks';
+import { SIM_ENABLED } from './sim';
+import { JobLine, opLabel, q2, useDirectory, useJobs, useLots, usePeriods, useRun } from './hooks';
 
 type Tab = 'lots' | 'issue' | 'periods' | 'jobs';
 
@@ -126,7 +128,7 @@ function TransferForm({ lot, me }: { lot: LotView; me: Profile }) {
   );
 }
 
-function AttestForm({ lot }: { lot: LotView }) {
+function AttestForm({ lot, me }: { lot: LotView; me: Profile }) {
   useI18n();
   const [challenge, setChallenge] = useState('');
   const [min, setMin] = useState('');
@@ -144,6 +146,15 @@ function AttestForm({ lot }: { lot: LotView }) {
       <Field label={t('구매사 요청 코드 (64자리)')}>
         <Input mono value={challenge} onChange={(e) => setChallenge(e.target.value)} />
       </Field>
+      {SIM_ENABLED && (
+        <button
+          type="button"
+          className="text-xs text-accent underline"
+          onClick={() => setChallenge(Array.from(crypto.getRandomValues(new Uint8Array(32)), (x) => x.toString(16).padStart(2, '0')).join(''))}
+        >
+          {t('시연: 구매사 요청 코드 받기')}
+        </button>
+      )}
       <Field label={t('주문 수량 (kg)')}>
         <Input inputMode="numeric" value={min} onChange={(e) => setMin(e.target.value)} />
       </Field>
@@ -153,6 +164,14 @@ function AttestForm({ lot }: { lot: LotView }) {
       </Button>
       <JobLine job={r.job} />
       <ErrorLine error={r.error} />
+      {r.job?.stage === 'confirmed' && (
+        <div>
+          <p className="text-xs text-ink-300">{t('구매사에게 전달할 확인 정보입니다. 구매사는 검증 화면에 붙여 넣어 확인합니다.')}</p>
+          <pre className="mt-2 overflow-x-auto rounded-lg bg-ink-900 p-3 text-[11px] text-ink-200">
+            {JSON.stringify({ challenge: challenge.trim().toLowerCase(), owner: me.partyId, minQuantityKg: m }, null, 2)}
+          </pre>
+        </div>
+      )}
     </form>
   );
 }
@@ -219,7 +238,7 @@ function LotPanel({ lot, me, onClose }: { lot: LotView; me: Profile; onClose: ()
       </div>
       <div className="mt-4">
         {mode === 'transfer' && <TransferForm key={lot.id} lot={lot} me={me} />}
-        {mode === 'attest' && <AttestForm key={lot.id} lot={lot} />}
+        {mode === 'attest' && <AttestForm key={lot.id} lot={lot} me={me} />}
         {mode === 'consume' && <ConsumeForm key={lot.id} lot={lot} />}
       </div>
     </section>
@@ -561,8 +580,27 @@ function JobsTab() {
 
 /* ---------------- shell ---------------- */
 
+/**
+ * Reloads lots and accounts whenever any of this company's jobs finishes.
+ * The form that started a job often unmounts first (its lot got spent), so
+ * the refresh cannot live in the form.
+ */
+function useRefreshOnJobEnd() {
+  const qc = useQueryClient();
+  const jobs = useJobs();
+  const seen = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const done = new Set((jobs.data ?? []).filter((j) => j.finishedAt).map((j) => j.id));
+    if (seen.current && [...done].some((id) => !seen.current!.has(id))) {
+      for (const k of [q2.lots, q2.periods, q2.me]) qc.invalidateQueries({ queryKey: k });
+    }
+    seen.current = done;
+  }, [jobs.data, qc]);
+}
+
 export function CompanyHome({ me }: { me: Profile }) {
   useI18n();
+  useRefreshOnJobEnd();
   const tabs = useMemo(() => {
     const all: [Tab, string][] = [
       ['lots', '내 로트'],

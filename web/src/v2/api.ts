@@ -1,4 +1,7 @@
 // Veilance v2 web — client for the v2 node (agent/API_V2.md).
+// With VITE_V2_DEMO=1 every call goes to the in-browser simulation (sim.ts).
+
+import { SIM_ENABLED, SimError, simRequest } from './sim';
 // The API key lives in sessionStorage only: closing the tab signs out.
 
 export const V2_URL = (import.meta.env.VITE_V2_URL as string | undefined) ?? 'http://localhost:4100';
@@ -31,6 +34,14 @@ export class V2Error extends Error {
 }
 
 export async function v2<T>(method: string, path: string, body?: unknown, key: string | null = getKey()): Promise<T> {
+  if (SIM_ENABLED) {
+    try {
+      return await simRequest<T>(method, path, body, key);
+    } catch (err) {
+      if (err instanceof SimError) throw new V2Error(err.message, err.status, err.code);
+      throw err;
+    }
+  }
   const res = await fetch(`${V2_URL}${path}`, {
     method,
     headers: { 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) },

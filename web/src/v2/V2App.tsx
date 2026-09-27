@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Button, ErrorLine, Field, Input } from '@/components/ui';
 import { cx } from '@/lib/format';
 import { getKey, setKey, short, V2Error } from './api';
+import { DEMO_ACCOUNTS, SIM_ENABLED, resetSim } from './sim';
 import { useHealth, useMe } from './hooks';
 import { CompanyHome } from './Company';
 import { AdminHome } from './Admin';
@@ -29,6 +30,18 @@ function SignIn({ onKey, error }: { onKey: (k: string) => void; error?: unknown 
       <Button type="submit" disabled={!k.trim()}>
         {t('들어가기')}
       </Button>
+      {SIM_ENABLED && (
+        <div className="border-t border-ink-700 pt-4">
+          <p className="mb-2 text-xs text-ink-300">{t('시연 계정 — 누르면 바로 들어갑니다')}</p>
+          <div className="grid grid-cols-2 gap-2">
+            {DEMO_ACCOUNTS.map((a) => (
+              <Button key={a.key} type="button" variant="secondary" size="sm" onClick={() => onKey(a.key)}>
+                {a.name}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
       <ErrorLine error={error} />
       <p className="border-t border-ink-700 pt-3 text-xs text-ink-400">
         {t('인증기관이나 구매사라면 계정 없이')} <Link className="text-accent underline" to="/v2/verify">{t('검증 화면')}</Link>{t('을 쓰면 됩니다.')}
@@ -85,6 +98,20 @@ export function V2App() {
           <button type="button" aria-pressed={locale === 'en'} onClick={() => setLocale('en')} className={`rounded-md px-2 py-1 ${locale === 'en' ? 'bg-ink-700 text-ink-100' : 'text-ink-400'}`}>EN</button>
         </div>
       </header>
+      {SIM_ENABLED && (
+        <div className="flex flex-wrap items-center justify-center gap-3 border-b border-amber/30 bg-amber-faint px-4 py-2 text-xs text-amber">
+          <span>{t('시뮬레이션 모드 — 브라우저 안에서 컨트랙트 규칙을 그대로 흉내 냅니다. 체인에는 기록되지 않습니다.')}</span>
+          <button
+            className="rounded border border-amber/50 px-2 py-0.5 hover:bg-amber/10"
+            onClick={() => {
+              resetSim();
+              signIn(null);
+            }}
+          >
+            {t('처음부터 다시')}
+          </button>
+        </div>
+      )}
       <main className="mx-auto w-full max-w-5xl flex-1 p-5 sm:p-8">
         {verify ? (
           <VerifyHome />

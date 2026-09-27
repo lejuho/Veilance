@@ -20,7 +20,7 @@ export const useMe = (key: string | null) =>
 export const useLots = () => useQuery({ queryKey: q2.lots, queryFn: () => v2<LotView[]>('GET', '/v2/lots'), refetchInterval: 8_000 });
 export const usePeriods = () => useQuery({ queryKey: q2.periods, queryFn: () => v2<AccountView[]>('GET', '/v2/periods'), refetchInterval: 8_000 });
 export const useDirectory = () => useQuery({ queryKey: q2.directory, queryFn: () => v2<DirectoryEntry[]>('GET', '/v2/directory') });
-export const useJobs = () => useQuery({ queryKey: q2.jobs, queryFn: () => v2<Job[]>('GET', '/v2/jobs'), refetchInterval: 4_000 });
+export const useJobs = () => useQuery({ queryKey: q2.jobs, queryFn: () => v2<Job[]>('GET', '/v2/jobs'), refetchInterval: 1_500 });
 
 /** Polls one job every 2 s until it ends; then refreshes everything it may have changed. */
 export function useJobPoll(job: Job | null) {

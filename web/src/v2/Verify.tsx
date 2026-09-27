@@ -78,6 +78,21 @@ function AttestationCheckForm() {
     <section className="rounded-xl border border-ink-600 bg-ink-850 p-5">
       <h3 className="text-base font-semibold">{t('구매사 · 주문 증명 확인')}</h3>
       <p className="mt-1 text-xs text-ink-400">{t('공급사에 보낸 요청 코드와 주문 수량으로 증명 기록을 찾습니다. 코드와 수량을 모르는 사람에게는 이 기록이 무엇인지 보이지 않습니다.')}</p>
+      <textarea
+        aria-label={t('공급사가 보낸 확인 정보 JSON')}
+        className="mt-3 h-20 w-full rounded-md border border-ink-600 bg-ink-900 p-2.5 font-mono text-xs text-ink-100 focus:border-accent/60 focus:outline-none"
+        placeholder={t('공급사가 보낸 확인 정보(JSON)를 붙여 넣으면 아래 칸이 채워집니다')}
+        onChange={(e) => {
+          try {
+            const j = JSON.parse(e.target.value) as { challenge?: string; owner?: string; minQuantityKg?: number };
+            if (j.challenge) setChallenge(j.challenge);
+            if (j.owner) setOwner(j.owner);
+            if (j.minQuantityKg) setMin(String(j.minQuantityKg));
+          } catch {
+            /* not JSON yet */
+          }
+        }}
+      />
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <Field label={t('요청 코드 (64자리)')} className="sm:col-span-2">
           <Input mono value={challenge} onChange={(e) => setChallenge(e.target.value)} />
