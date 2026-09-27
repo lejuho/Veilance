@@ -45,6 +45,7 @@ import {
   V2_PRIVATE_STATE_ID,
   buildV2Providers,
   deployV2Staged,
+  insertMissingVerifierKeys,
   findV2,
   type V2Contract,
   type V2Providers,
@@ -87,6 +88,8 @@ export const nodeState: { ready: boolean; step: string; error?: string; contract
 };
 
 const runtimes = new Map<string, Runtime>();
+/** Set while a staged deploy landed but still misses verifier keys. */
+let pendingDeployAddress: string | null = null;
 const jobsById = new Map<string, V2Job>();
 let walletProvider: ReturnType<typeof createSponsoredProvider> | null = null;
 const publicData = indexerPublicDataProvider(INDEXER_HTTP_URL, INDEXER_WS_URL);
@@ -206,7 +209,12 @@ export const bootNode = async (): Promise<void> => {
     }
 
     const deployment = loadDeploymentV2();
-    if (deployment) {
+    if (deployment && deployment.complete === false) {
+      // Some verifier keys are missing, so findDeployedContract would refuse
+      // the contract. Wait for POST /v2/admin/deploy to finish the inserts.
+      pendingDeployAddress = deployment.contractAddress;
+      console.log(`v2 contract at ${deployment.contractAddress} is missing verifier keys — POST /v2/admin/deploy resumes the deploy`);
+    } else if (deployment) {
       nodeState.step = "connecting tenants to the v2 contract";
       nodeState.contractAddress = deployment.contractAddress;
       for (const rt of runtimes.values()) await connect(rt, deployment.contractAddress);
@@ -297,8 +305,16 @@ const execute = async ({ rt, job, exec }: Work) => {
     job.elapsedMs = Date.now() - started;
     saveTenant(rt.file);
   }
-  if ((job.stage as V2Job["stage"]) === "confirmed") await scanAll().catch((e) => console.warn("post-job inbox scan failed:", e));
+  if ((job.stage as V2Job["stage"]) === "confirmed") {
+    await scanAll().catch((e) => console.warn("post-job inbox scan failed:", e));
+    // A public indexer can serve contract state a few seconds behind the
+    // confirmation: look again shortly so a delivery never waits for the
+    // next job to show up in the recipient's vault.
+    for (const ms of RESCAN_AFTER_MS) setTimeout(() => void scanAll().catch(() => undefined), ms);
+  }
 };
+
+const RESCAN_AFTER_MS = [5_000, 20_000, 60_000];
 
 // ---------------------------------------------------------------------------
 // Pending (crash-safe vault updates)
@@ -450,14 +466,29 @@ export const deploy = (admin: Runtime): V2Job => {
   requireAdmin(admin);
   if (nodeState.contractAddress) throw new ApiError(`already deployed at ${nodeState.contractAddress}`, 409, "already_deployed");
   return enqueue(admin, "deploy", async (job) => {
-    const deployed = await deployV2Staged(admin.providers, baseState(admin), (step) => (job.result = { step }));
-    const address = deployed.contractAddress;
-    saveDeploymentV2({ contractAddress: address });
+    const step = (s: string) => (job.result = { step: s });
+    let address: string;
+    let txHash: string | undefined;
+    let blockHeight: number | undefined;
+    let inserted: number;
+    if (pendingDeployAddress) {
+      address = pendingDeployAddress;
+      admin.providers.privateStateProvider.setContractAddress(address);
+      inserted = await insertMissingVerifierKeys(admin.providers, address, step);
+    } else {
+      const deployed = await deployV2Staged(admin.providers, baseState(admin), step, (a) => {
+        pendingDeployAddress = a;
+        saveDeploymentV2({ contractAddress: a, complete: false });
+      });
+      ({ contractAddress: address, txHash, blockHeight, inserted } = deployed);
+    }
+    pendingDeployAddress = null;
+    saveDeploymentV2({ contractAddress: address, complete: true });
     nodeState.contractAddress = address;
     for (const rt of runtimes.values()) await connect(rt, address);
     // Existing company tenants still need their receiving key on the new contract.
     for (const rt of runtimes.values()) if (rt.file.role === "company") enqueue(rt, "registerEncKey", () => registerEncKeyTx(rt));
-    return { txHash: deployed.txHash, blockHeight: deployed.blockHeight, result: { contractAddress: address, verifierKeysInserted: deployed.inserted } };
+    return { txHash, blockHeight, result: { contractAddress: address, verifierKeysInserted: inserted } };
   });
 };
 

@@ -55,6 +55,21 @@ const serialized = <T>(fn: () => Promise<T>): Promise<T> => {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Longest the sponsor waits for its wallet to absorb a submitted transaction. */
+const SETTLE_TIMEOUT_MS = 180_000;
+const settleAfterSubmit = async (): Promise<void> => {
+  if (!wallet) return;
+  await Rx.firstValueFrom(
+    wallet.facade.state().pipe(
+      Rx.filter((st) => st.isSynced && st.pending.all.length === 0 && st.dust.availableCoins.length > 0),
+      Rx.timeout(SETTLE_TIMEOUT_MS),
+    ),
+  ).catch(() => console.warn(`sponsor wallet did not settle within ${SETTLE_TIMEOUT_MS / 1000}s after a submission; continuing`));
+};
+
+/** Longest a single submission may take before the sponsor gives up on it. */
+const SUBMIT_TIMEOUT_MS = Number(process.env.VEILANCE_SPONSOR_SUBMIT_TIMEOUT_MINUTES ?? "10") * 60_000;
+
 /** How long a restored checkpoint may sit without progress before it is abandoned. */
 const STALL_MS = Number(process.env.VEILANCE_SPONSOR_STALL_MINUTES ?? "10") * 60_000;
 
@@ -247,7 +262,23 @@ export const mountSponsor = (app: Hono): void => {
       return c.json({ error: `could not deserialize txHex: ${err instanceof Error ? err.message : String(err)}`, code: "bad_request" }, 400);
     }
     try {
-      const txId = await serialized(() => wallet!.facade.submitTransaction(tx));
+      // A submission that never settles (e.g. the wallet's pending-transaction
+      // tracking stuck on indexer errors) would block every later request
+      // behind it: give up after SUBMIT_TIMEOUT_MS and release the booking.
+      const txId = await serialized(async () => {
+        const id = await Promise.race([
+          wallet!.facade.submitTransaction(tx),
+          sleep(SUBMIT_TIMEOUT_MS).then(() => {
+            throw new Error(`submission did not settle within ${SUBMIT_TIMEOUT_MS / 60_000} min`);
+          }),
+        ]);
+        // Hold the lock until the wallet has absorbed this transaction's DUST
+        // spend. Balancing the next one against stale DUST state gets it
+        // rejected by the node as InvalidDustSpendProof (1010 / 170) — seen on
+        // Preprod, where the wallet lags the chain by seconds.
+        await settleAfterSubmit();
+        return id;
+      });
       return c.json({ txId });
     } catch (err) {
       await wallet.facade.revertTransaction(tx).catch(() => undefined);

@@ -248,9 +248,11 @@ export const loadTenants = (): TenantFile[] => {
 };
 
 const deploymentPath = () => path.join(V2_STATE_DIR, "deployment.json");
-export const loadDeploymentV2 = (): { contractAddress: string } | null =>
-  fs.existsSync(deploymentPath()) ? (JSON.parse(fs.readFileSync(deploymentPath(), "utf8")) as { contractAddress: string }) : null;
-export const saveDeploymentV2 = (d: { contractAddress: string }) => writeJsonAtomic(deploymentPath(), d);
+/** `complete: false` = deploy transaction landed, some verifier keys not inserted yet. Absent = complete (older files). */
+export type DeploymentV2 = { contractAddress: string; complete?: boolean };
+export const loadDeploymentV2 = (): DeploymentV2 | null =>
+  fs.existsSync(deploymentPath()) ? (JSON.parse(fs.readFileSync(deploymentPath(), "utf8")) as DeploymentV2) : null;
+export const saveDeploymentV2 = (d: DeploymentV2) => writeJsonAtomic(deploymentPath(), d);
 
 /** Local-dev convenience: the admin API key, written once when the admin tenant is created. */
 export const adminKeyPath = () => path.join(V2_STATE_DIR, "admin-api-key");

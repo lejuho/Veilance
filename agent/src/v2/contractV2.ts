@@ -108,10 +108,33 @@ export const INSERT_AFTER: V2CircuitId[] = [
  * The deployed contract ends up with exactly the state a one-shot deploy
  * would have, so findDeployedContract's verifier-key check passes.
  */
+/**
+ * Inserts every INSERT_AFTER verifier key the contract at `contractAddress`
+ * does not have yet. Idempotent: resumes a staged deploy that stopped half
+ * way. Needs the maintenance signing key in `providers`' private state store.
+ */
+export const insertMissingVerifierKeys = async (
+  providers: V2Providers,
+  contractAddress: string,
+  onStep: (step: string) => void = () => {},
+): Promise<number> => {
+  const state = await providers.publicDataProvider.queryContractState(contractAddress);
+  if (!state) throw new Error(`no contract state at ${contractAddress}`);
+  const missing = INSERT_AFTER.filter((id) => !state.operation(id));
+  if (missing.length === 0) return 0;
+  const keys = await providers.zkConfigProvider.getVerifierKeys(missing);
+  for (const [id, vk] of keys) {
+    onStep(`inserting verifier key · ${id}`);
+    await submitInsertVerifierKeyTx(providers, compiledContractV2, contractAddress, id, vk);
+  }
+  return keys.length;
+};
+
 export const deployV2Staged = async (
   providers: V2Providers,
   initialPrivateState: V2PrivateState,
   onStep: (step: string) => void = () => {},
+  onDeployed: (contractAddress: string) => void = () => {},
 ): Promise<{ contractAddress: string; txHash: string; blockHeight: number; inserted: number }> => {
   const d = await createUnprovenDeployTx(providers, { compiledContract: compiledContractV2, initialPrivateState, signingKey: sampleSigningKey() });
   const full = ledger.ContractState.deserialize(d.public.initialContractState.serialize());
@@ -134,13 +157,12 @@ export const deployV2Staged = async (
   providers.privateStateProvider.setContractAddress(contractAddress);
   await providers.privateStateProvider.set(V2_PRIVATE_STATE_ID, d.private.initialPrivateState as V2PrivateState);
   await providers.privateStateProvider.setSigningKey(contractAddress, d.private.signingKey);
+  // Persist the address now: if a key insertion below fails or the process
+  // dies, the deploy can be resumed instead of redone.
+  onDeployed(contractAddress);
 
-  const keys = await providers.zkConfigProvider.getVerifierKeys(INSERT_AFTER);
-  for (const [id, vk] of keys) {
-    onStep(`inserting verifier key · ${id}`);
-    await submitInsertVerifierKeyTx(providers, compiledContractV2, contractAddress, id, vk);
-  }
-  return { contractAddress, txHash: res.txHash, blockHeight: res.blockHeight, inserted: keys.length };
+  const inserted = await insertMissingVerifierKeys(providers, contractAddress, onStep);
+  return { contractAddress, txHash: res.txHash, blockHeight: res.blockHeight, inserted };
 };
 
 export const findV2 = (providers: V2Providers, contractAddress: string, initialPrivateState: V2PrivateState): Promise<V2Contract> =>

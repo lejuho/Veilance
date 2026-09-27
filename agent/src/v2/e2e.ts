@@ -51,6 +51,17 @@ const run = async (key: string, method: string, path: string, body: unknown, lab
 };
 
 type Tenant = { id: string; partyId: string; certId: string; apiKey: string; registerJob?: Job };
+
+/** Waits until `key`'s vault holds `count` active lots (a public indexer can lag the confirmation). */
+const activeLots = async (key: string, count: number, ms = 120_000) => {
+  const t0 = Date.now();
+  for (;;) {
+    const lots = await call<LotView[]>(key, "GET", "/v2/lots?status=ACTIVE");
+    if (lots.length >= count || Date.now() - t0 > ms) return lots;
+    await call(key, "POST", "/v2/inbox/scan");
+    await sleep(5_000);
+  }
+};
 type LotView = { id: string; status: string; quantityKg: number; recycledEuKg: number; recycledOtherKg: number; material: string; origins: { origin: string; issuer: string }[]; memo?: string };
 
 const main = async () => {
@@ -62,6 +73,8 @@ const main = async () => {
   }
   const health = await call<{ contractAddress?: string }>(null, "GET", "/v2/health");
   if (!health.contractAddress) await run(adminKey, "POST", "/v2/admin/deploy", {}, "deploy v2 contract");
+
+  if (process.argv.includes("--short")) return shortScenario();
 
   const make = async (name: string) => {
     const t = await call<Tenant>(adminKey, "POST", "/v2/admin/tenants", { name });
@@ -89,7 +102,7 @@ const main = async () => {
   console.log("\n— supply chain —");
   await run(recycler.apiKey, "POST", "/v2/lots/issue", { recipient: refiner.partyId, origin: "recycler-hu", material: "nickel", quantityKg: 30_000, recycled: true, isEu: true, carbonClass: 1 }, "recycler issues 30 t recycled Ni");
   await run(mine.apiKey, "POST", "/v2/lots/issue", { recipient: refiner.partyId, origin: "ni-mine", material: "nickel", quantityKg: 70_000, carbonClass: 2 }, "mine issues 70 t primary Ni");
-  const refinerLots = await call<LotView[]>(refiner.apiKey, "GET", "/v2/lots?status=ACTIVE");
+  const refinerLots = await activeLots(refiner.apiKey, 2);
   check("refiner received both lots", refinerLots.length === 2);
 
   const merged = await run(refiner.apiKey, "POST", "/v2/lots/process", { lotIds: refinerLots.map((l) => l.id), outMaterial: "nickel", yieldPct: 100, quantityKg: 100_000 }, "refiner merges 100 t");
@@ -97,7 +110,7 @@ const main = async () => {
   const t1 = await run(refiner.apiKey, "POST", `/v2/lots/${mergedId}/transfer`, { recipient: cell.partyId, quantityKg: 50_000, recycledEuKg: 30_000, recycledOtherKg: 0 }, "refiner sends 50 t with all 30 t recycled");
   check("transfer confirmed", t1.stage === "confirmed");
 
-  const [cellLot] = await call<LotView[]>(cell.apiKey, "GET", "/v2/lots?status=ACTIVE");
+  const [cellLot] = await activeLots(cell.apiKey, 1);
   check("cell maker holds 50 t, 30 t EU-recycled", cellLot?.quantityKg === 50_000 && cellLot.recycledEuKg === 30_000);
   check("both issuers visible to the holder", new Set(cellLot?.origins.map((o) => o.origin)).size === 2);
 
@@ -110,7 +123,7 @@ const main = async () => {
   check("a different order size finds nothing", !wrongQty.attested);
 
   const d = await run(cell.apiKey, "POST", `/v2/lots/${cellLot.id}/transfer`, { recipient: oem.partyId, quantityKg: 20_000, recycledEuKg: 12_000, recycledOtherKg: 0, memo: "PO-2028-0042" }, "cell maker delivers 20 t to the OEM");
-  const [oemLot] = await call<LotView[]>(oem.apiKey, "GET", "/v2/lots?status=ACTIVE");
+  const [oemLot] = await activeLots(oem.apiKey, 1);
   check("OEM received 20 t with the order memo", d.stage === "confirmed" && oemLot?.quantityKg === 20_000 && oemLot.memo === "PO-2028-0042");
 
   console.log("\n— plant/period declaration —");
@@ -138,6 +151,49 @@ const main = async () => {
   console.log(failed.length ? `\n${failed.length} check(s) FAILED` : `\nall ${checks.length} checks passed`);
   process.exitCode = failed.length ? 1 : 0;
 };
+
+/**
+ * Short scenario for slow public networks (Preprod: ~7 min per transaction):
+ * an EU recycler issues to a cell maker, which declares its plant/period
+ * share; the notified body checks it. 10 transactions after the deploy.
+ */
+async function shortScenario() {
+  const make = async (name: string) => {
+    const t = await call<Tenant>(adminKey, "POST", "/v2/admin/tenants", { name });
+    if (t.registerJob) {
+      const j = await wait(t.apiKey, t.registerJob, `register receiving key · ${name}`);
+      if (j.stage !== "confirmed") throw new Error(`receiving key for ${name} did not confirm: ${j.error}`);
+    }
+    return t;
+  };
+  const recycler = await make("EU Recycler");
+  const cell = await make("Cell Maker");
+  await run(adminKey, "POST", "/v2/admin/origins", { label: "recycler-hu" }, "certify origin recycler-hu");
+  await run(adminKey, "POST", "/v2/admin/suppliers", { partyId: recycler.partyId, certId: recycler.certId }, "certify supplier · recycler");
+  await run(adminKey, "POST", "/v2/admin/recyclers", { partyId: recycler.partyId, certId: recycler.certId, isEu: true }, "certify EU recycler");
+  await run(adminKey, "POST", "/v2/admin/suppliers", { partyId: cell.partyId, certId: cell.certId }, "certify supplier · cell maker");
+
+  await run(recycler.apiKey, "POST", "/v2/lots/issue", { recipient: cell.partyId, origin: "recycler-hu", material: "nickel", quantityKg: 30_000, recycled: true, isEu: true, carbonClass: 1 }, "recycler issues 30 t recycled Ni");
+  const [lot] = await activeLots(cell.apiKey, 1);
+  check("cell maker received 30 t, all EU-recycled", lot?.quantityKg === 30_000 && lot.recycledEuKg === 30_000);
+
+  const open = await run(cell.apiKey, "POST", "/v2/periods", { plant: "cell-eu-1", period: 2028, material: "nickel" }, "open plant/period account");
+  const accountId = open.result?.accountId as string;
+  const consumed = await run(cell.apiKey, "POST", `/v2/periods/${accountId}/consume`, { lotId: lot.id }, "consume 30 t into the period");
+  check("max declarable share is 100.00 % (1.3x capped)", consumed.result?.maxDeclarableBps === 10_000);
+  const over = await run(cell.apiKey, "POST", `/v2/periods/${accountId}/declare`, { shareBps: 10_001 }, "declare 100.01 % (overclaim)", true);
+  check("overclaim rejected by the contract", over.stage === "rejected");
+  await run(cell.apiKey, "POST", `/v2/periods/${accountId}/declare`, { shareBps: 10_000 }, "declare 100.00 %");
+
+  const pkg = await call<{ owner: string; plant: string; period: number; material: string; totalKg: number; salt: string }>(cell.apiKey, "GET", `/v2/periods/${accountId}/auditor-package`);
+  const nb = await call<{ declared: boolean; shareBps?: number; totalMatches?: boolean }>(null, "POST", "/v2/public/declaration", pkg);
+  check("notified body reads 100.00 % and the total matches", nb.declared && nb.shareBps === 10_000 && nb.totalMatches === true);
+  const ledger = await call<Record<string, string>>(null, "GET", "/v2/public/ledger");
+  console.log("\nledger:", ledger);
+  const failed = checks.filter(([, v]) => !v);
+  console.log(failed.length ? `\n${failed.length} check(s) FAILED` : `\nall ${checks.length} checks passed`);
+  process.exitCode = failed.length ? 1 : 0;
+}
 
 main().catch((err) => {
   console.error(err);
