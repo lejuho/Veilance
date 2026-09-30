@@ -5,6 +5,8 @@ import { BrowserRouter, HashRouter } from 'react-router-dom';
 import { loadApi } from './api/client';
 import { App } from './App';
 import { installDevWallet } from './lib/devWallet';
+import { resolveV2Mode, STATIC_BUILD } from './v2/mode';
+import { ModeGate } from './v2/ModeGate';
 import './index.css';
 
 const qc = new QueryClient({
@@ -16,21 +18,24 @@ const qc = new QueryClient({
 // the round trip is testable without a real Lace install — see docs/WALLET.md.
 if (import.meta.env.VITE_DEV_WALLET === '1') installDevWallet();
 
-loadApi().then(() => {
+Promise.all([loadApi(), resolveV2Mode()]).then(([, mode]) => {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-      <QueryClientProvider client={qc}>
-        {/* Static hosting (GitHub Pages) cannot serve deep links: the demo build routes by hash. */}
-        {import.meta.env.VITE_V2_DEMO === '1' ? (
-          <HashRouter>
-            <App />
-          </HashRouter>
-        ) : (
-          <BrowserRouter>
-            <App />
-          </BrowserRouter>
-        )}
-      </QueryClientProvider>
+      {mode === 'unreachable' ? (
+        <ModeGate />
+      ) : (
+        <QueryClientProvider client={qc}>
+          {STATIC_BUILD ? (
+            <HashRouter>
+              <App />
+            </HashRouter>
+          ) : (
+            <BrowserRouter>
+              <App />
+            </BrowserRouter>
+          )}
+        </QueryClientProvider>
+      )}
     </React.StrictMode>,
   );
 });

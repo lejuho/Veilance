@@ -4,7 +4,32 @@
 import { SIM_ENABLED, SimError, simRequest } from './sim';
 // The API key lives in sessionStorage only: closing the tab signs out.
 
-export const V2_URL = (import.meta.env.VITE_V2_URL as string | undefined) ?? 'http://localhost:4100';
+// The `auto` Pages build (mode.ts) takes the node URL from `?api=<url>`, remembered in
+// localStorage, because a tunnel's address can change between runs.
+const URL_KEY = 'veilance-v2-url';
+const BUILD_URL = (import.meta.env.VITE_V2_URL as string | undefined) || 'http://localhost:4100';
+const cleanUrl = (url: string) => url.trim().replace(/\/+$/, '');
+function resolveV2Url(): string {
+  if (import.meta.env.VITE_V2_DEMO !== 'auto') return BUILD_URL;
+  try {
+    const param = new URLSearchParams(window.location.search).get('api');
+    if (param && /^https?:\/\//.test(param)) localStorage.setItem(URL_KEY, cleanUrl(param));
+    return localStorage.getItem(URL_KEY) ?? BUILD_URL;
+  } catch {
+    return BUILD_URL;
+  }
+}
+export const V2_URL = resolveV2Url();
+export const setV2Url = (url: string | null) => {
+  try {
+    if (url) localStorage.setItem(URL_KEY, cleanUrl(url));
+    else localStorage.removeItem(URL_KEY);
+  } catch {
+    /* storage is optional */
+  }
+};
+// ngrok's free tier answers browsers with an HTML warning page unless this header is sent.
+export const tunnelHeaders: Record<string, string> = V2_URL.includes('ngrok') ? { 'ngrok-skip-browser-warning': '1' } : {};
 
 const KEY = 'veilance-v2-key';
 export const getKey = (): string | null => {
@@ -44,7 +69,7 @@ export async function v2<T>(method: string, path: string, body?: unknown, key: s
   }
   const res = await fetch(`${V2_URL}${path}`, {
     method,
-    headers: { 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) },
+    headers: { 'content-type': 'application/json', ...tunnelHeaders, ...(key ? { authorization: `Bearer ${key}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const json = (await res.json().catch(() => ({}))) as T & { error?: string; code?: string };

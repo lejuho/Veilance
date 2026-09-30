@@ -1,5 +1,8 @@
-# Front-end-only demo on GitHub Pages: the v2 web UI with the in-browser
-# simulation (web/src/v2/sim.ts), served at https://<owner>.github.io/Veilance/.
+# v2 web UI on GitHub Pages, served at https://<owner>.github.io/Veilance/.
+# VITE_V2_DEMO=auto: it talks to the presenter's live Preprod node when that answers
+# (scripts/live-demo.sh prints the `?api=` link), otherwise visitors can open the
+# in-browser simulation (web/src/v2/sim.ts). Repo variable VEILANCE_V2_URL, if set,
+# is the default node URL.
 name: Demo (GitHub Pages)
 
 on:
@@ -32,7 +35,8 @@ jobs:
       - run: npx vite build
         working-directory: web
         env:
-          VITE_V2_DEMO: "1"
+          VITE_V2_DEMO: auto
+          VITE_V2_URL: ${{ vars.VEILANCE_V2_URL }}
           VITE_BASE: /Veilance/
       - uses: actions/upload-pages-artifact@v3
         with:

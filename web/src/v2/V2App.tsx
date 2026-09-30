@@ -7,6 +7,7 @@ import { cx } from '@/lib/format';
 import { getKey, setKey, short, V2Error } from './api';
 import { DEMO_ACCOUNTS, SIM_ENABLED, resetSim } from './sim';
 import { useHealth, useMe } from './hooks';
+import { AUTO, switchMode } from './mode';
 import { CompanyHome } from './Company';
 import { AdminHome } from './Admin';
 import { VerifyHome } from './Verify';
@@ -76,6 +77,11 @@ export function V2App() {
           <span className={cx('inline-block h-2 w-2 rounded-full', health.isError ? 'bg-red' : ready ? 'bg-accent' : 'bg-amber')} />
           {health.isError ? t('노드에 연결할 수 없음') : ready ? t('노드 준비됨') : health.data?.step ?? '…'}
         </span>
+        {AUTO && !SIM_ENABLED && (
+          <button className="rounded border border-ink-600 px-2 py-0.5 text-xs text-ink-400 hover:text-ink-200" onClick={() => switchMode('demo')}>
+            {t('프론트 데모로 전환')}
+          </button>
+        )}
         <nav className="ml-auto flex items-center gap-1 text-sm">
           <Link to="/v2" className={cx('rounded-md px-3 py-1.5', !verify ? 'bg-ink-700 text-ink-100' : 'text-ink-400 hover:text-ink-200')}>
             {t('회사')}
@@ -110,6 +116,11 @@ export function V2App() {
           >
             {t('처음부터 다시')}
           </button>
+          {AUTO && (
+            <button className="rounded border border-amber/50 px-2 py-0.5 hover:bg-amber/10" onClick={() => switchMode('live')}>
+              {t('라이브 노드 연결')}
+            </button>
+          )}
         </div>
       )}
       <main className="mx-auto w-full max-w-5xl flex-1 p-5 sm:p-8">

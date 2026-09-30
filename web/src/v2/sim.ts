@@ -7,7 +7,12 @@
 
 import type { AccountView, Job, LotView } from './api';
 
-export const SIM_ENABLED = import.meta.env.VITE_V2_DEMO === '1';
+// VITE_V2_DEMO=1 always simulates; VITE_V2_DEMO=auto switches it on at boot when the
+// visitor picks the simulation (mode.ts). Decided before the first render, never after.
+export let SIM_ENABLED = import.meta.env.VITE_V2_DEMO === '1';
+export const enableSim = () => {
+  SIM_ENABLED = true;
+};
 
 const STORE = 'veilance-v2-sim';
 const PROVE_MS = 2200;

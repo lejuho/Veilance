@@ -371,4 +371,12 @@ export const messages: Record<string, string> = {
   "구매사에게 전달할 확인 정보입니다. 구매사는 검증 화면에 붙여 넣어 확인합니다.": "Send this to the buyer. The buyer pastes it into the verification page.",
   "공급사가 보낸 확인 정보 JSON": "Supplier's check info JSON",
   "공급사가 보낸 확인 정보(JSON)를 붙여 넣으면 아래 칸이 채워집니다": "Paste the check info (JSON) from the supplier to fill the fields below",
+  "라이브 노드에 연결할 수 없습니다": "Can't reach the live node",
+  "발표자 PC의 Preprod 노드가 꺼져 있거나 터널 주소가 바뀌었을 수 있습니다. 프론트 데모는 같은 화면과 규칙을 브라우저 안에서 시뮬레이션합니다.": "The presenter's Preprod node may be off, or its tunnel address may have changed. The front-end demo simulates the same screens and rules in your browser.",
+  "프론트 데모로 보기": "Open the front-end demo",
+  "다시 연결": "Retry",
+  "노드 주소": "Node URL",
+  "이 주소로 연결": "Connect to this URL",
+  "프론트 데모로 전환": "Switch to front-end demo",
+  "라이브 노드 연결": "Connect to live node",
 };
