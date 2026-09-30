@@ -9,7 +9,7 @@ export function ModeGate() {
   const { locale, setLocale } = useI18n();
   const [url, setUrl] = useState(V2_URL);
   return (
-    <div className="flex min-h-full items-center justify-center p-5">
+    <div className="flex h-full items-center justify-center overflow-y-auto p-5">
       <div className="w-full max-w-md space-y-5 rounded-xl border border-ink-600 bg-ink-850 p-6">
         <div className="flex items-start justify-between gap-3">
           <h1 className="text-2xl font-bold tracking-tight text-ink-100">

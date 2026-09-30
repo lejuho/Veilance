@@ -68,7 +68,7 @@ export function V2App() {
   const badKey = me.error instanceof V2Error && me.error.status === 401;
   const ready = health.data?.ready;
   return (
-    <div className="flex min-h-full flex-col">
+    <div className="flex h-full flex-col overflow-y-auto">
       <header className="flex min-h-12 flex-wrap items-center gap-3 border-b border-ink-700 bg-ink-850 px-4 py-2">
         <Link to="/v2" className="text-2xl font-bold tracking-tight text-ink-100">
           Veilance <span className="align-top text-xs font-medium text-accent">v2</span>
