@@ -4,7 +4,7 @@ import { WorkspaceContext, WorkspaceSwitchContext, isWorkspace, type Workspace }
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { Screen } from './Screen';
 import { V2App } from './v2/V2App';
-import { STATIC_BUILD } from './v2/mode';
+import { Landing } from './landing/Landing';
 
 export function App() {
   useI18n();
@@ -15,7 +15,7 @@ export function App() {
   return (
     <WorkspaceContext.Provider value={viewer}><WorkspaceSwitchContext.Provider value={switchViewer}>
     <Routes>
-      <Route path="/" element={STATIC_BUILD ? <Navigate to="/v2" replace /> : <Screen />} />
+      <Route path="/" element={<Landing />} />
       <Route path="/v2/*" element={<V2App />} />
       <Route path="/explorer/tx/:hash" element={<Screen explorer="tx" />} />
       <Route path="/explorer/block/:height" element={<Screen explorer={"block"} />} />
