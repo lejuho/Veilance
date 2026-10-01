@@ -294,6 +294,7 @@ export async function simRequest<T>(method: string, path: string, body: unknown,
       declarations: String(Object.keys(s.declarations).length),
       inbox: String(s.inbox),
     } as T;
+  if (p === '/v2/public/directory') return s.tenants.filter((x) => x.role === 'company').map((x) => ({ name: x.name, partyId: x.partyId })) as T;
   if (p === '/v2/public/declaration') {
     if (!b.owner || !b.plant || !Number.isInteger(b.period) || !b.material) throw new SimError('owner, plant, period, material are required', 400, 'bad_request');
     const d = s.declarations[await sha(`decl|${b.owner}|${b.plant}|${b.period}|${b.material}`)];

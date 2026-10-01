@@ -161,6 +161,10 @@ export const mountNode = (app: Hono): void => {
 
   // A notified body looks a declaration up by who/where/when, and — once the
   // manufacturer hands it the auditor package — checks the hidden total.
+  // Company names for the buyer's supplier picker. Party ids are public already
+  // (the keys of partyEncKeys); this only adds the names this node knows.
+  app.get("/v2/public/directory", pub(async (c) => c.json(allTenants().filter((t) => t.file.role === "company").map((t) => ({ name: t.file.name, partyId: tenantView(t).partyId })))));
+
   app.post(
     "/v2/public/declaration",
     pub(async (c) => {

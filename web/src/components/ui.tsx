@@ -35,6 +35,28 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   );
 });
 
+/** Copies `text` and says so for a moment. */
+export function CopyButton({ text, className }: { text: string; className?: string }) {
+  useI18n();
+  const [done, setDone] = useState(false);
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="secondary"
+      className={className}
+      onClick={() =>
+        navigator.clipboard?.writeText(text).then(() => {
+          setDone(true);
+          setTimeout(() => setDone(false), 1500);
+        })
+      }
+    >
+      {done ? t('복사됨') : t('복사')}
+    </Button>
+  );
+}
+
 /* ---------- Form controls ---------- */
 const CONTROL = 'h-8 w-full rounded-md border border-ink-600 bg-ink-900 px-2.5 text-[13px] text-ink-100 focus:border-accent/60 focus:outline-none disabled:opacity-50';
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { mono?: boolean }>(function Input({ className, mono, ...rest }, ref) {

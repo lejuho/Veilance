@@ -1,8 +1,8 @@
 import { t, useI18n } from '@/lib/i18n';
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Button, ErrorLine, Field, Input } from '@/components/ui';
-import { v2, pct, type AttestationCheck, type AuditorPackage, type DeclarationCheck } from './api';
+import { Button, CopyButton, ErrorLine, Field, Input, Select } from '@/components/ui';
+import { v2, pct, type AttestationCheck, type AuditorPackage, type DeclarationCheck, type DirectoryEntry } from './api';
 
 /** Notified body: checks a declared recycled share, and the hidden total once the manufacturer hands over its package. */
 function DeclarationCheckForm() {
@@ -63,17 +63,51 @@ function DeclarationCheckForm() {
   );
 }
 
+// The buyer's request codes, kept in this browser with a label (an order number)
+// so the same code can be picked again when the supplier's answer comes back.
+type SavedRequest = { label: string; code: string };
+const REQUESTS = 'veilance-v2-requests';
+const loadRequests = (): SavedRequest[] => {
+  try {
+    return JSON.parse(localStorage.getItem(REQUESTS) ?? '[]') as SavedRequest[];
+  } catch {
+    return [];
+  }
+};
+const randomCode = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
+const HEX64 = /^[0-9a-f]{64}$/i;
+const CUSTOM = '__custom';
+
 /** Buyer: checks an order-bound attestation from the challenge it issued. */
 function AttestationCheckForm() {
   useI18n();
   const [challenge, setChallenge] = useState('');
   const [owner, setOwner] = useState('');
   const [min, setMin] = useState('');
+  const [label, setLabel] = useState('');
+  const [requests, setRequests] = useState<SavedRequest[]>(loadRequests);
+  const [customOwner, setCustomOwner] = useState(false);
+  const directory = useQuery({ queryKey: ['v2', 'public-directory'], queryFn: () => v2<DirectoryEntry[]>('GET', '/v2/public/directory', undefined, null), retry: 0 });
   const m = useMutation({
     mutationFn: () => v2<AttestationCheck>('POST', '/v2/public/attestation', { challenge: challenge.trim(), owner: owner.trim(), minQuantityKg: Number(min) }, null),
   });
-  const valid = /^[0-9a-f]{64}$/i.test(challenge.trim()) && /^[0-9a-f]{64}$/i.test(owner.trim()) && Number.isInteger(Number(min)) && Number(min) > 0;
+  const valid = HEX64.test(challenge.trim()) && HEX64.test(owner.trim()) && Number.isInteger(Number(min)) && Number(min) > 0;
   const r = m.data;
+  const suppliers = directory.data ?? [];
+  const known = suppliers.find((d) => d.partyId === owner.trim().toLowerCase());
+  const saved = requests.find((q) => q.code === challenge.trim().toLowerCase());
+  const newRequest = () => {
+    const code = randomCode();
+    const next = [{ label: label.trim() || t('요청 {n}', { n: requests.length + 1 }), code }, ...requests].slice(0, 20);
+    setRequests(next);
+    try {
+      localStorage.setItem(REQUESTS, JSON.stringify(next));
+    } catch {
+      /* storage is optional */
+    }
+    setChallenge(code);
+    setLabel('');
+  };
   return (
     <section className="rounded-xl border border-ink-600 bg-ink-850 p-5">
       <h3 className="text-base font-semibold">{t('구매사 · 주문 증명 확인')}</h3>
@@ -93,23 +127,62 @@ function AttestationCheckForm() {
           }
         }}
       />
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <Field label={t('요청 코드 (64자리)')} className="sm:col-span-2">
-          <Input mono value={challenge} onChange={(e) => setChallenge(e.target.value)} />
-        </Field>
-        <Field label={t('공급사 식별자 (64자리)')}>
-          <Input mono value={owner} onChange={(e) => setOwner(e.target.value)} />
-        </Field>
-        <Field label={t('주문 수량 (kg)')}>
-          <Input inputMode="numeric" value={min} onChange={(e) => setMin(e.target.value)} />
-        </Field>
+      <div className="mt-3 space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label={t('요청 코드')}>
+            <Select
+              value={saved?.code ?? (challenge.trim() ? CUSTOM : '')}
+              onChange={(e) => e.target.value !== CUSTOM && setChallenge(e.target.value)}
+            >
+              <option value="">{t('저장한 요청 선택…')}</option>
+              {requests.map((q) => (
+                <option key={q.code} value={q.code}>
+                  {q.label} · {q.code.slice(0, 8)}…
+                </option>
+              ))}
+              {challenge.trim() && !saved && <option value={CUSTOM}>{t('받은 코드')} · {challenge.trim().slice(0, 8)}…</option>}
+            </Select>
+          </Field>
+          <Field label={t('새 요청 (주문 번호 등 이름)')}>
+            <div className="flex gap-2">
+              <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="PO-2028-0042" />
+              <Button type="button" variant="secondary" size="sm" className="h-8 shrink-0" onClick={newRequest}>
+                {t('코드 만들기')}
+              </Button>
+            </div>
+          </Field>
+        </div>
+        <div className="flex items-center gap-2">
+          <Input mono aria-label={t('요청 코드 (64자리)')} value={challenge} onChange={(e) => setChallenge(e.target.value)} placeholder={t('요청 코드 (64자리)')} />
+          {HEX64.test(challenge.trim()) && <CopyButton text={challenge.trim()} className="h-8 shrink-0" />}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label={t('공급사')}>
+            {suppliers.length > 0 && !customOwner ? (
+              <Select
+                value={known?.partyId ?? (owner.trim() ? CUSTOM : '')}
+                onChange={(e) => (e.target.value === CUSTOM ? setCustomOwner(true) : setOwner(e.target.value))}
+              >
+                <option value="">{t('공급사 선택…')}</option>
+                {suppliers.map((d) => (
+                  <option key={d.partyId} value={d.partyId}>
+                    {d.name} · {d.partyId.slice(0, 6)}…
+                  </option>
+                ))}
+                <option value={CUSTOM}>{owner.trim() && !known ? `${t('직접 입력')} · ${owner.trim().slice(0, 8)}…` : t('직접 입력…')}</option>
+              </Select>
+            ) : (
+              <Input mono value={owner} onChange={(e) => setOwner(e.target.value)} placeholder={t('공급사 식별자 (64자리)')} />
+            )}
+          </Field>
+          <Field label={t('주문 수량 (kg)')}>
+            <Input inputMode="numeric" value={min} onChange={(e) => setMin(e.target.value)} />
+          </Field>
+        </div>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-3">
+      <div className="mt-3">
         <Button disabled={!valid || m.isPending} onClick={() => m.mutate()}>
           {t('확인')}
-        </Button>
-        <Button variant="ghost" size="sm" onClick={() => setChallenge(Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join(''))}>
-          {t('새 요청 코드 만들기')}
         </Button>
       </div>
       <ErrorLine error={m.error} />

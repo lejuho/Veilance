@@ -1,11 +1,10 @@
 import { t, useI18n } from '@/lib/i18n';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, ErrorLine, Field, Input, Select } from '@/components/ui';
+import { Button, CopyButton, ErrorLine, Field, Input, Select } from '@/components/ui';
 import { cx } from '@/lib/format';
 import { kg, pct, short, type AccountView, type AuditorPackage, type LotView, type Profile } from './api';
 import { v2 } from './api';
-import { SIM_ENABLED } from './sim';
 import { JobLine, opLabel, q2, useDirectory, useJobs, useLots, usePeriods, useRun } from './hooks';
 
 type Tab = 'lots' | 'issue' | 'periods' | 'jobs';
@@ -146,15 +145,13 @@ function AttestForm({ lot, me }: { lot: LotView; me: Profile }) {
       <Field label={t('구매사 요청 코드 (64자리)')}>
         <Input mono value={challenge} onChange={(e) => setChallenge(e.target.value)} />
       </Field>
-      {SIM_ENABLED && (
-        <button
-          type="button"
-          className="text-xs text-accent underline"
-          onClick={() => setChallenge(Array.from(crypto.getRandomValues(new Uint8Array(32)), (x) => x.toString(16).padStart(2, '0')).join(''))}
-        >
-          {t('시연: 구매사 요청 코드 받기')}
-        </button>
-      )}
+      <button
+        type="button"
+        className="text-xs text-accent underline"
+        onClick={() => setChallenge(Array.from(crypto.getRandomValues(new Uint8Array(32)), (x) => x.toString(16).padStart(2, '0')).join(''))}
+      >
+        {t('시연: 구매사 요청 코드 받기')}
+      </button>
       <Field label={t('주문 수량 (kg)')}>
         <Input inputMode="numeric" value={min} onChange={(e) => setMin(e.target.value)} />
       </Field>
@@ -166,7 +163,10 @@ function AttestForm({ lot, me }: { lot: LotView; me: Profile }) {
       <ErrorLine error={r.error} />
       {r.job?.stage === 'confirmed' && (
         <div>
-          <p className="text-xs text-ink-300">{t('구매사에게 전달할 확인 정보입니다. 구매사는 검증 화면에 붙여 넣어 확인합니다.')}</p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-ink-300">{t('구매사에게 전달할 확인 정보입니다. 구매사는 검증 화면에 붙여 넣어 확인합니다.')}</p>
+            <CopyButton text={JSON.stringify({ challenge: challenge.trim().toLowerCase(), owner: me.partyId, minQuantityKg: m }, null, 2)} />
+          </div>
           <pre className="mt-2 overflow-x-auto rounded-lg bg-ink-900 p-3 text-[11px] text-ink-200">
             {JSON.stringify({ challenge: challenge.trim().toLowerCase(), owner: me.partyId, minQuantityKg: m }, null, 2)}
           </pre>
@@ -508,7 +508,10 @@ function AccountCard({ a }: { a: AccountView }) {
           <ErrorLine error={pkgErr} />
           {pkg && (
             <div>
-              <p className="text-xs text-amber">{t('투입 총량과 비밀값이 들어 있습니다. 인증기관에만 전달하세요.')}</p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-amber">{t('투입 총량과 비밀값이 들어 있습니다. 인증기관에만 전달하세요.')}</p>
+                <CopyButton text={JSON.stringify(pkg, null, 2)} />
+              </div>
               <pre className="mt-2 overflow-x-auto rounded-lg bg-ink-900 p-3 text-[11px] text-ink-200">{JSON.stringify(pkg, null, 2)}</pre>
             </div>
           )}
