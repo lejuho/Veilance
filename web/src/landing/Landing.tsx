@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { enableSim } from '../v2/sim';
 import { DoubleCount } from './DoubleCount';
+import { LeakProof } from './LeakProof';
 import { NickelChart } from './NickelChart';
 import { Sky } from './Sky';
 import './landing.css';
@@ -107,23 +108,16 @@ export function Landing() {
       </section>
 
       <section className="lp-section" id="secrets">
-        <p className="lp-kicker">03 · 그래서 한곳에 모으면</p>
-        <h2 className="lp-h2">증명은 되지만 영업비밀이 그대로 넘어갑니다.</h2>
-        <div className="lp-grid lp-grid-2">
-          <div className="lp-card">
-            <h3>대조하려면 보여줘야 하는 것</h3>
-            <div className="lp-chips">
-              <span className="lp-chip">공급사 이름</span>
-              <span className="lp-chip">로트별 물량</span>
-              <span className="lp-chip">거래처와 주문량</span>
-              <span className="lp-chip">공장별 투입량</span>
-            </div>
-          </div>
-          <div className="lp-card">
-            <h3>믿을 수 있는 숫자 vs 비밀</h3>
-            <p>한곳에 모으면 이중 계상은 잡힙니다. 대신 경쟁하는 한국 셀 제조사와 소재사가 서로 몇 톤을 사는지가 다 보입니다. 지금 방식은 둘 중 하나를 포기하는 구조입니다.</p>
-          </div>
-        </div>
+        <p className="lp-kicker">3 · 증명하면 안 되나</p>
+        <h2 className="lp-h2">
+          증명은 가능합니다.
+          <br />
+          대신 거래처가 다 보입니다.
+        </h2>
+        <LeakProof />
+        <p className="lp-lead">
+          이중 계상을 잡으려면 원장을 열어야 합니다. 열리는 순간 공급사 이름, 로트 물량, 누가 몇 톤을 샀는지가 같이 나옵니다. 한국 셀 제조사끼리 보면 안 되는 숫자입니다.
+        </p>
       </section>
 
       <section className="lp-section" id="today">
