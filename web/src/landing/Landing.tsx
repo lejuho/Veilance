@@ -5,6 +5,7 @@ import { DoubleCount } from './DoubleCount';
 import { LeakProof } from './LeakProof';
 import { NickelChart } from './NickelChart';
 import { PlatformOnly } from './PlatformOnly';
+import { RuleTime } from './RuleTime';
 import { Sky } from './Sky';
 import './landing.css';
 
@@ -134,8 +135,18 @@ export function Landing() {
         </p>
       </section>
 
+      <section className="lp-section" id="rules">
+        <p className="lp-kicker">5 · 규제</p>
+        <h2 className="lp-h2">
+          지금은 사용했다고 하면 됩니다.
+          <br />
+          2028년부터는 숫자를 증명해야 합니다.
+        </h2>
+        <RuleTime />
+      </section>
+
       <section className="lp-section" id="veilance">
-        <p className="lp-kicker">05 · 해결</p>
+        <p className="lp-kicker">6 · 해결</p>
         <h2 className="lp-h2">추적 플랫폼 아래에 공유 원장 하나를 둡니다.</h2>
         <div className="lp-grid lp-flow">
           <div className="lp-card">
