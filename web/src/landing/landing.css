@@ -1336,6 +1336,170 @@
   word-break: keep-all;
 }
 
+.lp-arch {
+  position: relative;
+  margin: 18px 0 0;
+}
+
+.lp-arch-stage {
+  position: relative;
+  display: grid;
+  gap: 10px;
+}
+
+.lp-arch-stage::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 18px;
+  bottom: 18px;
+  width: 2px;
+  margin-left: -1px;
+  background: rgba(61, 220, 151, 0.16);
+  pointer-events: none;
+}
+
+.lp-arch-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.lp-arch-plats {
+  justify-content: space-evenly;
+  opacity: 0.72;
+}
+
+.lp-arch-cos span,
+.lp-arch-read span {
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--lp-line);
+  background: var(--lp-card);
+  color: var(--lp-white);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.lp-arch-plats div,
+.lp-arch-node,
+.lp-arch-pay,
+.lp-arch-led {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 22px;
+  border-radius: 16px;
+  border: 1px solid var(--lp-line);
+  background:
+    linear-gradient(155deg, rgba(61, 220, 151, 0.14), transparent 50%),
+    rgba(6, 18, 14, 0.82);
+}
+
+.lp-arch-plats div {
+  background: rgba(22, 26, 24, 0.72);
+  border-color: rgba(168, 176, 172, 0.32);
+}
+
+.lp-arch-plats strong {
+  color: #c5ccc8;
+  font-family: var(--lp-display);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.lp-arch-plats em {
+  color: #8b948f;
+}
+
+.lp-arch-node strong,
+.lp-arch-pay strong,
+.lp-arch-led strong {
+  color: var(--lp-white);
+  font-family: var(--lp-display);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.lp-arch-node em,
+.lp-arch-pay em,
+.lp-arch-led em,
+.lp-arch-read em {
+  font-style: normal;
+  font-size: 13px;
+  color: var(--lp-muted);
+}
+
+.lp-arch-node {
+  position: relative;
+  width: min(640px, 100%);
+  margin: 0 auto;
+  border-color: rgba(61, 220, 151, 0.45);
+}
+
+.lp-arch-secret {
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  margin-top: -13px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(61, 220, 151, 0.18);
+  color: var(--lp-green-2);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.lp-arch-pay {
+  width: min(520px, 92%);
+  margin: 0 auto;
+}
+
+.lp-arch-led {
+  width: min(720px, 100%);
+  margin: 0 auto;
+}
+
+.lp-arch-chips {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.lp-arch-chips span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--lp-line);
+  color: var(--lp-green-2);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.lp-arch-read {
+  gap: 14px;
+}
+
+
+#veilance .lp-h2 {
+  max-width: none;
+  word-break: keep-all;
+}
+
+#veilance .lp-lead {
+  max-width: 44rem;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+  word-break: keep-all;
+}
+
 #rules .lp-h2 {
   max-width: none;
   word-break: keep-all;

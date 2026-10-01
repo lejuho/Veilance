@@ -7,6 +7,7 @@ import { NickelChart } from './NickelChart';
 import { PlatformOnly } from './PlatformOnly';
 import { RuleTime } from './RuleTime';
 import { Sky } from './Sky';
+import { VeilArch } from './VeilArch';
 import './landing.css';
 
 const MODE_KEY = 'veilance-v2-mode';
@@ -148,26 +149,9 @@ export function Landing() {
       <section className="lp-section" id="veilance">
         <p className="lp-kicker">6 · 해결</p>
         <h2 className="lp-h2">추적 플랫폼 아래에 공유 원장 하나를 둡니다.</h2>
-        <div className="lp-grid lp-flow">
-          <div className="lp-card">
-            <h3>회사</h3>
-            <p>재활용 업체, 광산, 가공사, 셀 제조사, OEM. 지갑과 토큰은 필요 없습니다.</p>
-          </div>
-          <div className="lp-card">
-            <h3>Veilance 노드</h3>
-            <p>비밀값을 들고 영지식 증명을 만듭니다. 회사는 API 키만 줍니다.</p>
-          </div>
-          <div className="lp-card">
-            <h3>수수료 대납</h3>
-            <p>DUST는 운영 서버가 냅니다. 대납 서버는 증명만 받고 비밀값은 못 봅니다.</p>
-          </div>
-          <div className="lp-card">
-            <h3>Midnight 원장</h3>
-            <p>해시, 사용 표시, 암호문, 신고 비율만 남습니다. OEM과 인증기관은 계정 없이 읽습니다.</p>
-          </div>
-        </div>
-        <p className="lp-lead" style={{ marginTop: 28 }}>
-          한국도 2027년 사용후 배터리법으로 같은 길을 갑니다. 지금부터 30톤이 OEM까지 가는 길을 보여 드리겠습니다.
+        <VeilArch />
+        <p className="lp-lead" style={{ marginTop: 22 }}>
+          Circularise 같은 추적 플랫폼은 그대로 씁니다. 대체하는 게 아니라 그 아래에 까는 원장입니다. 플랫폼끼리 겹치는 재활용분은 여기서 막힙니다.
         </p>
         <button type="button" className="lp-cta" onClick={startDemo}>
           데모 시작
