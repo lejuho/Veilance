@@ -11,6 +11,6 @@ Visual language is **inspired by** [catalyze-research.com](https://catalyze-rese
 | `landing/nickel-cells.jpg` | CC0 1.0 | [Sevenethics, 18650 and 21700 cells](https://commons.wikimedia.org/wiki/File:18650_and_21700_lithium_ion_battery_cell.jpg) |
 | `landing/nickel-ev.jpg` | CC0 1.0 | [Fortunate4now, EV charging](https://commons.wikimedia.org/wiki/File:Electric_car_charging_station.jpg) |
 
-Chart numbers from [IEA Nickel (2024)](https://www.iea.org/reports/nickel) and [IEA Global EV Outlook 2024](https://www.iea.org/reports/global-ev-outlook-2024/trends-in-electric-vehicle-batteries), CC BY 4.0.
+The Circularise **name** on the landing is nominative (identifying an existing product). Their logo was not copied; no press-kit / Commons file was available.
 
 Palette extracted as **inspiration only** (not a trademark): background `#010622`, body text `rgba(255,255,255,0.8)`, display white, cool blue network `#8aa4ff`.

@@ -4,6 +4,7 @@ import { enableSim } from '../v2/sim';
 import { DoubleCount } from './DoubleCount';
 import { LeakProof } from './LeakProof';
 import { NickelChart } from './NickelChart';
+import { PlatformOnly } from './PlatformOnly';
 import { Sky } from './Sky';
 import './landing.css';
 
@@ -121,18 +122,16 @@ export function Landing() {
       </section>
 
       <section className="lp-section" id="today">
-        <p className="lp-kicker">04 · 지금은</p>
-        <h2 className="lp-h2">플랫폼 안은 이미 추적합니다. 사이가 비어 있습니다.</h2>
-        <div className="lp-grid lp-grid-2">
-          <div className="lp-card">
-            <h3>Circularise 같은 추적 플랫폼</h3>
-            <p>수집·화면·배터리 여권은 이미 있습니다. 영지식 증명도 씁니다. 다만 자기 플랫폼 고객들 안에서입니다.</p>
-          </div>
-          <div className="lp-card">
-            <h3>플랫폼이 갈라지면</h3>
-            <p>LG는 A 프로그램, 삼성은 B 프로그램을 쓰면 같은 재활용 30톤이 양쪽에 올라가도 어느 쪽도 모릅니다. 그 빈칸이 Veilance가 맡는 자리입니다.</p>
-          </div>
-        </div>
+        <p className="lp-kicker">4 · 지금은</p>
+        <h2 className="lp-h2">
+          추적 프로그램은 이미 있습니다.
+          <br />
+          자기 고객 안에서만입니다.
+        </h2>
+        <PlatformOnly />
+        <p className="lp-lead">
+          Circularise 같은 프로그램은 자기 고객끼리는 추적·검증합니다. 플랫폼이 갈라지면 그 사이에서는 같은 30톤이 두 번 올라가도 맞춰 볼 수가 없습니다.
+        </p>
       </section>
 
       <section className="lp-section" id="veilance">
