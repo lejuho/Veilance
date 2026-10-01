@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { enableSim } from '../v2/sim';
+import { DoubleCount } from './DoubleCount';
 import { NickelChart } from './NickelChart';
 import { Sky } from './Sky';
 import './landing.css';
@@ -66,7 +67,7 @@ export function Landing() {
         <h2 className="lp-h2">
           녹슬지 말라고 쓰던 금속이,
           <br />
-          이제 배터리를 먹입니다.
+          이제 전기차 배터리에 들어갑니다.
         </h2>
         <p className="lp-lead">
           니켈은 은빛 전이금속입니다. 스테인리스에 들어가면 싱크대와 칼이 되고, NMC·NCA 양극에 들어가면 전기차 주행거리가 됩니다. 쓰임이 냄비에서 배터리로 옮겨가는 중입니다.
@@ -93,24 +94,13 @@ export function Landing() {
       </section>
 
       <section className="lp-section" id="problem">
-        <p className="lp-kicker">02 · 문제</p>
-        <h2 className="lp-h2">금속은 하나인데 서류만 두 장이 됩니다.</h2>
-        <div className="lp-split">
-          <div className="lp-node">
-            재활용 니켈
-            <small>실물 30 t</small>
-          </div>
-          <span className="lp-arrow">→</span>
-          <div className="lp-node">
-            A사 장부
-            <small>재활용 30 t</small>
-          </div>
-          <span className="lp-arrow">→</span>
-          <div className="lp-node">
-            B사 장부
-            <small>재활용 30 t</small>
-          </div>
-        </div>
+        <p className="lp-kicker">2 · 문제</p>
+        <h2 className="lp-h2">
+          금속은 하나인데
+          <br />
+          서류만 두 장이 됩니다.
+        </h2>
+        <DoubleCount />
         <p className="lp-lead">
           회사마다, 추적 플랫폼마다 장부가 따로라서 같은 30톤을 두 고객에게 줬다고 적어도 맞춰 볼 수가 없습니다. 허위든 실수든 비교 자체가 안 됩니다.
         </p>
