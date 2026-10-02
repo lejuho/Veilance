@@ -47,10 +47,16 @@ type Account = {
   declaredBps?: number;
   salt?: string;
 };
+type CompanyProfile = { country: string; kind: string };
+// What the company asked the policy authority to certify when the platform onboarded it.
+type Applied = { supplier: boolean; recycler: 'eu' | 'other' | null };
 type Tenant = {
   id: string;
   name: string;
-  role: 'admin' | 'company';
+  role: 'admin' | 'company' | 'platform';
+  profile?: CompanyProfile;
+  applied?: Applied;
+  declined?: boolean;
   apiKey: string;
   partyId: string;
   certId: string;
@@ -59,7 +65,7 @@ type Tenant = {
   receivingKey: boolean;
 };
 type State = {
-  version: 1;
+  version: 2;
   block: number;
   contractAddress: string | null;
   policyVersion: number;
@@ -97,46 +103,87 @@ class SimError extends Error {
 class Reject extends Error {}
 
 const DEMO_TENANTS: [string, string, Partial<Tenant>][] = [
-  ['admin', 'Policy admin', { role: 'admin', receivingKey: false }],
-  ['recycler', 'HU Recycler', { supplier: true, recycler: 'eu' }],
-  ['mine', 'Nickel Mine', { supplier: true }],
-  ['refiner', 'Refiner', { supplier: true }],
-  ['cell', 'Cell Maker', { supplier: true }],
-  ['oem', 'OEM', {}],
+  ['platform', 'Platform Operator', { role: 'platform', receivingKey: false, profile: { country: '—', kind: '추적 플랫폼 · 회사 계정 발급' } }],
+  ['admin', 'Policy Authority', { role: 'admin', receivingKey: false, profile: { country: 'EU', kind: '정책 기관 · 인증 심사' } }],
+  ['recycler', 'HU Recycler', { supplier: true, recycler: 'eu', applied: { supplier: true, recycler: 'eu' }, profile: { country: '헝가리', kind: '배터리 재활용' } }],
+  ['mine', 'Nickel Mine', { supplier: true, applied: { supplier: true, recycler: null }, profile: { country: '핀란드', kind: '니켈 광산' } }],
+  ['refiner', 'Refiner', { supplier: true, applied: { supplier: true, recycler: null }, profile: { country: '독일', kind: '니켈 정련' } }],
+  ['cell', 'Cell Maker', { supplier: true, applied: { supplier: true, recycler: null }, profile: { country: '폴란드', kind: '배터리 셀 제조' } }],
+  ['oem', 'OEM', { applied: { supplier: false, recycler: null }, profile: { country: '독일', kind: '완성차 · 구매사' } }],
+  // Onboarded by the platform, still waiting for the policy authority.
+  ['asia', 'Asia Recycler', { applied: { supplier: true, recycler: 'other' }, profile: { country: '한국', kind: '배터리 재활용' } }],
+  ['cathode', 'Cathode Works', { applied: { supplier: true, recycler: null }, profile: { country: '벨기에', kind: '양극재 제조' } }],
 ];
 
-/** The demo accounts the sign-in screen offers as one-click buttons. */
-export const DEMO_ACCOUNTS = DEMO_TENANTS.map(([slug, name, extra]) => ({ key: `demo-${slug}`, name, role: extra.role ?? 'company' }));
+/** The accounts the sign-in screen offers as one-click choices (the two applicants have none yet). */
+export const DEMO_ACCOUNTS = DEMO_TENANTS.filter(([slug]) => slug !== 'asia' && slug !== 'cathode').map(([slug, name, extra]) => ({
+  key: `demo-${slug}`,
+  name,
+  role: extra.role ?? 'company',
+  kind: extra.profile?.kind ?? '',
+  country: extra.profile?.country ?? '',
+}));
 
-const seed = (): State => ({
-  version: 1,
-  block: 18_240,
-  contractAddress: rand(32),
-  policyVersion: 9,
-  carbonThreshold: 9,
-  origins: ['recycler-hu', 'ni-mine'],
-  rules: ['nickel>nickel>100', 'nickel>nickel-sulfate>20'],
-  nullifiers: 0,
-  lotLeaves: 0,
-  inbox: 0,
-  tenants: DEMO_TENANTS.map(([slug, name, extra]) => ({
-    id: slug,
-    name,
-    role: 'company',
-    apiKey: `demo-${slug}`,
-    partyId: rand(32),
-    certId: rand(32),
-    supplier: false,
-    recycler: null,
-    receivingKey: true,
-    ...extra,
-  })),
-  lots: [],
-  accounts: [],
-  jobs: [],
-  attestations: {},
-  declarations: {},
-});
+const iso = (day: number, hour: number, sec = 0) => new Date(Date.UTC(2026, 8, day, hour, 12, sec)).toISOString();
+
+const seed = (): State => {
+  const s: State = {
+    version: 2,
+    block: 18_240,
+    contractAddress: rand(32),
+    policyVersion: 9,
+    carbonThreshold: 9,
+    origins: ['recycler-hu', 'ni-mine'],
+    rules: ['nickel>nickel>100', 'nickel>nickel-sulfate>20'],
+    nullifiers: 0,
+    lotLeaves: 0,
+    inbox: 0,
+    tenants: DEMO_TENANTS.map(([slug, name, extra]) => ({
+      id: slug,
+      name,
+      role: 'company',
+      apiKey: `demo-${slug}`,
+      partyId: rand(32),
+      certId: rand(32),
+      supplier: false,
+      recycler: null,
+      receivingKey: true,
+      ...extra,
+    })),
+    lots: [],
+    accounts: [],
+    jobs: [],
+    attestations: {},
+    declarations: {},
+  };
+  // A September history, so screens are not empty. Everything the script uses
+  // starts fresh: only OEM keeps a lot, the rest is consumed or in a 2026 account.
+  const pid = (slug: string) => s.tenants.find((x) => x.id === slug)!.partyId;
+  const job = (tenant: string, op: string, day: number, hour: number, block: number) =>
+    s.jobs.push({ id: rand(8), tenant, op, stage: 'confirmed', createdAt: iso(day, hour), finishedAt: iso(day, hour, 2), elapsedMs: PROVE_MS, txHash: rand(32), blockHeight: block });
+  const lot = (owner: string, quantityKg: number, recycledEuKg: number, origins: Slot[], source: string, day: number, consumedDay: number | null, custody: number, memo?: string) =>
+    s.lots.push({ id: rand(32), owner, material: 'nickel', quantityKg, recycledEuKg, recycledOtherKg: 0, carbonClass: 3, custody, origins, status: consumedDay ? 'CONSUMED' : 'ACTIVE', source, memo, createdAt: iso(day, 9), consumedAt: consumedDay ? iso(consumedDay, 10) : undefined });
+  const hu = { origin: 'recycler-hu', issuer: pid('recycler') };
+  const mine = { origin: 'ni-mine', issuer: pid('mine') };
+  job('recycler', 'issueRecycledLot', 14, 9, 17_812);
+  lot('refiner', 20_000, 20_000, [hu], 'inbox', 14, 15, 3);
+  job('mine', 'issueLot', 14, 11, 17_819);
+  lot('refiner', 40_000, 0, [mine], 'inbox', 14, 15, 1);
+  job('refiner', 'processLots', 15, 10, 17_904);
+  lot('refiner', 60_000, 20_000, [hu, mine], 'process', 15, 16, 2);
+  job('refiner', 'transferLot', 16, 10, 17_981);
+  lot('cell', 60_000, 20_000, [hu, mine], 'inbox', 16, 18, 2);
+  job('cell', 'transferLot', 18, 10, 18_102);
+  lot('oem', 15_000, 5_000, [hu, mine], 'inbox', 18, null, 2, 'PO-2026-0311');
+  lot('cell', 45_000, 15_000, [hu, mine], 'change', 18, 20, 2);
+  job('cell', 'openPeriod', 20, 9, 18_190);
+  job('cell', 'consumeIntoPeriod', 20, 10, 18_197);
+  s.accounts.push({ id: rand(32), owner: 'cell', plant: 'cell-eu-1', period: 2026, material: 'nickel', totalKg: 45_000, recycledEuKg: 15_000, recycledOtherKg: 0, status: 'OPEN' });
+  s.lotLeaves = 8;
+  s.nullifiers = 6;
+  s.inbox = 4;
+  return s;
+};
 
 let state: State | null = null;
 const load = (): State => {
@@ -147,7 +194,7 @@ const load = (): State => {
   } catch {
     /* storage is optional */
   }
-  if (!state || state.version !== 1) state = seed();
+  if (!state || state.version !== 2) state = seed();
   return state;
 };
 const save = () => {
@@ -197,7 +244,19 @@ const accountView = (a: Account): AccountView => ({
   maxDeclarableBps: maxBps(a),
   declaredBps: a.declaredBps,
 });
-const tenantView = (t: Tenant) => ({ id: t.id, name: t.name, role: t.role, partyId: t.partyId, certId: t.certId, supplier: t.supplier, recycler: t.recycler, receivingKey: t.receivingKey });
+const tenantView = (t: Tenant) => ({
+  id: t.id,
+  name: t.name,
+  role: t.role,
+  partyId: t.partyId,
+  certId: t.certId,
+  supplier: t.supplier,
+  recycler: t.recycler,
+  receivingKey: t.receivingKey,
+  profile: t.profile,
+  applied: t.applied,
+  declined: t.declined,
+});
 const publicJob = (j: Job & { tenant: string }): Job => {
   const { tenant: _t, ...rest } = j;
   return rest;
@@ -315,6 +374,10 @@ export async function simRequest<T>(method: string, path: string, body: unknown,
   const admin = () => {
     if (t.role !== 'admin') throw new SimError('admin only', 403, 'forbidden');
   };
+  // Account issuing is the platform operator's; the authority may read the list too.
+  const staff = () => {
+    if (t.role !== 'admin' && t.role !== 'platform') throw new SimError('platform or policy authority only', 403, 'forbidden');
+  };
   const company = () => {
     if (t.role !== 'company') throw new SimError('company tenants only', 403, 'forbidden');
   };
@@ -335,13 +398,27 @@ export async function simRequest<T>(method: string, path: string, body: unknown,
 
   // admin
   if (p === '/v2/admin/tenants' && method === 'GET') {
-    admin();
+    staff();
     return s.tenants.map(tenantView) as T;
   }
   if (p === '/v2/admin/tenants') {
-    admin();
+    staff();
     if (!b.name) throw new SimError('name is required', 400, 'bad_request');
-    const nt: Tenant = { id: rand(4), name: String(b.name), role: 'company', apiKey: `vk_${rand(24)}`, partyId: rand(32), certId: rand(32), supplier: false, recycler: null, receivingKey: false };
+    const apply = b.apply as Partial<Applied> | undefined;
+    const profile = b.profile as Partial<CompanyProfile> | undefined;
+    const nt: Tenant = {
+      id: rand(4),
+      name: String(b.name),
+      role: 'company',
+      apiKey: `vk_${rand(24)}`,
+      partyId: rand(32),
+      certId: rand(32),
+      supplier: false,
+      recycler: null,
+      receivingKey: false,
+      profile: profile ? { country: String(profile.country ?? ''), kind: String(profile.kind ?? '') } : undefined,
+      applied: apply ? { supplier: !!apply.supplier, recycler: apply.recycler === 'eu' || apply.recycler === 'other' ? apply.recycler : null } : { supplier: false, recycler: null },
+    };
     s.tenants.push(nt);
     save();
     const registerJob = enqueue(nt, 'registerEncKey', async () => {
@@ -362,6 +439,12 @@ export async function simRequest<T>(method: string, path: string, body: unknown,
     if (!x) throw new SimError('unknown party', 404, 'not_found');
     return x;
   };
+  if (p === '/v2/admin/applications/decline') {
+    admin();
+    byParty(b.partyId).declined = true; // off chain: nothing was certified
+    save();
+    return { declined: true } as T;
+  }
   if (p === '/v2/admin/origins') {
     admin();
     return enqueue(t, 'certifyOrigin', async () => {

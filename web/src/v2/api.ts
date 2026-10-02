@@ -79,10 +79,16 @@ export async function v2<T>(method: string, path: string, body?: unknown, key: s
 
 export type Health = { ready: boolean; step: string; contractAddress?: string; error?: string };
 
+// Only the in-browser simulation fills these: the platform onboards a company with
+// what it applies for, and the policy authority reviews that (Admin.tsx).
+export type CompanyProfile = { country: string; kind: string };
+export type Applied = { supplier: boolean; recycler: 'eu' | 'other' | null };
+
 export type Profile = {
   id: string;
   name: string;
-  role: 'admin' | 'company';
+  role: 'admin' | 'company' | 'platform';
+  profile?: CompanyProfile;
   partyId: string;
   certId: string;
   deployed: boolean;

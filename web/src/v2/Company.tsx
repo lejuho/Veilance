@@ -616,6 +616,11 @@ export function CompanyHome({ me }: { me: Profile }) {
   const [tab, setTab] = useState<Tab>(me.recycler ? 'issue' : 'lots');
   return (
     <div>
+      {me.profile && (
+        <p className="mb-3 text-center text-xs text-ink-400">
+          {me.name} · {t(me.profile.kind)} · {t(me.profile.country)}
+        </p>
+      )}
       <nav className="mb-6 flex flex-wrap justify-center gap-1" aria-label={t('업무 화면')}>
         {tabs.map(([id, label]) => (
           <button key={id} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)} className={cx('rounded-lg px-4 py-2 text-sm', tab === id ? 'bg-ink-700 text-ink-100' : 'text-ink-400 hover:text-ink-200')}>
