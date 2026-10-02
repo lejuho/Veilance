@@ -183,7 +183,7 @@ function ConsumeForm({ lot }: { lot: LotView }) {
   const [id, setId] = useState('');
   const accountId = id || open[0]?.id || '';
   const r = useRun<{ lotId: string }>('POST', () => `/v2/periods/${accountId}/consume`);
-  if (!open.length) return <p className="text-sm text-ink-400">{t('이 재료의 열린 기간 계정이 없습니다. ‘공장 · 기간 신고’에서 먼저 여세요.')}</p>;
+  if (!open.length) return <p className="text-sm text-ink-400">{t('이 재료의 생산 장부가 없습니다. ‘재활용 함량 신고’ 탭에서 먼저 만드세요.')}</p>;
   return (
     <form
       className="space-y-3"
@@ -192,7 +192,7 @@ function ConsumeForm({ lot }: { lot: LotView }) {
         if (accountId && !r.pending) r.run({ lotId: lot.id });
       }}
     >
-      <Field label={t('투입할 기간 계정')}>
+      <Field label={t('기록할 생산 장부')}>
         <Select value={accountId} onChange={(e) => setId(e.target.value)}>
           {open.map((a) => (
             <option key={a.id} value={a.id}>
@@ -201,9 +201,9 @@ function ConsumeForm({ lot }: { lot: LotView }) {
           ))}
         </Select>
       </Field>
-      <p className="text-xs text-ink-400">{t('로트 전체가 이 공장 · 기간의 생산에 투입된 것으로 기록되고 로트는 소비됩니다.')}</p>
+      <p className="text-xs text-ink-400">{t('이 로트 전체를 해당 공장 · 연도의 생산에 썼다고 기록합니다. 기록한 로트는 사용됨으로 넘어갑니다.')}</p>
       <Button type="submit" disabled={r.pending}>
-        {t('기간에 투입')}
+        {t('생산 장부에 기록')}
       </Button>
       <JobLine job={r.job} />
       <ErrorLine error={r.error} />
@@ -232,7 +232,7 @@ function LotPanel({ lot, me, onClose }: { lot: LotView; me: Profile; onClose: ()
       <div className="mt-4 flex gap-1 rounded-lg bg-ink-800 p-1 text-xs" role="group">
         {(['transfer', 'attest', 'consume'] as const).map((m) => (
           <button key={m} aria-pressed={mode === m} onClick={() => setMode(m)} className={cx('rounded-md px-3 py-1.5', mode === m ? 'bg-ink-700 text-ink-100' : 'text-ink-400')}>
-            {t(m === 'transfer' ? '전달 · 나누기' : m === 'attest' ? '주문 증명' : '기간 투입')}
+            {t(m === 'transfer' ? '전달 · 나누기' : m === 'attest' ? '주문 증명' : '생산에 사용')}
           </button>
         ))}
       </div>
@@ -348,6 +348,14 @@ function LotsTab({ me }: { me: Profile }) {
         <p className="text-xs text-ink-400">{t('보유 합계 {total}', { total: kg(total) })}</p>
       </div>
       <RecentJob />
+      {pickedLots.length === 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-accent/40 bg-ink-850 px-4 py-2.5 text-sm">
+          <span className="text-ink-200">{t('{lot}을 골랐습니다. 합칠 로트를 하나 더 선택하세요.', { lot: `${pickedLots[0].material} ${kg(pickedLots[0].quantityKg)}` })}</span>
+          <button type="button" className="text-xs text-ink-400 hover:text-ink-200" onClick={() => setPicked([])}>
+            {t('선택 취소')}
+          </button>
+        </div>
+      )}
       {pickedLots.length === 2 && <MergePanel key={picked.join()} a={pickedLots[0]} b={pickedLots[1]} onDone={() => setPicked([])} />}
       {openLot && <LotPanel key={openLot.id} lot={openLot} me={me} onClose={() => setOpenId(null)} />}
       {lots.isPending ? (
@@ -459,7 +467,7 @@ function AccountCard({ a }: { a: AccountView }) {
       </div>
       <dl className="mt-3 grid grid-cols-3 gap-3 text-sm">
         <div>
-          <dt className="text-xs text-ink-400">{t('투입 합계')}</dt>
+          <dt className="text-xs text-ink-400">{t('생산에 쓴 양')}</dt>
           <dd className="tabular-nums">{kg(a.totalKg)}</dd>
         </div>
         <div>
@@ -484,7 +492,7 @@ function AccountCard({ a }: { a: AccountView }) {
             if (!r.pending && a.totalKg > 0) r.run({ shareBps: b });
           }}
         >
-          <Field label={t('신고할 비율 (basis points, 비우면 최대)')} className="w-56">
+          <Field label={t('신고할 비율 (만분율 · 7800 = 78.00%, 비우면 최대)')} className="w-64">
             <Input inputMode="numeric" value={bps} placeholder={String(a.maxDeclarableBps)} onChange={(e) => setBps(e.target.value)} />
           </Field>
           <Button type="submit" disabled={r.pending || a.totalKg === 0}>
@@ -532,6 +540,11 @@ function PeriodsTab() {
   const valid = !!plant.trim() && !!material.trim() && Number.isInteger(p);
   return (
     <div className="space-y-5">
+      <div className="rounded-xl border border-ink-700 bg-ink-900 p-4 text-xs leading-relaxed text-ink-300">
+        <p className="font-medium text-ink-100">{t('이 탭은 무엇을 하나요?')}</p>
+        <p className="mt-1">{t('EU 배터리 규정은 공장 · 연도마다 배터리에 들어간 재활용 원료 비율을 신고하게 합니다. 그래서 공장 · 연도 · 재료별로 생산 장부를 만들고, 실제 생산에 쓴 로트를 기록한 뒤, 장부에 쌓인 양으로 비율을 신고합니다.')}</p>
+        <p className="mt-1">{t('① 생산 장부 만들기 → ② 내 로트에서 ‘생산에 사용’으로 기록 → ③ 이 탭에서 비율 신고. 컨트랙트가 기록된 양보다 높은 비율은 거부하고, 체인에는 비율만 공개됩니다.')}</p>
+      </div>
       <form
         className="flex flex-wrap items-end gap-3 rounded-xl border border-ink-600 bg-ink-850 p-5"
         onSubmit={(e) => {
@@ -542,23 +555,23 @@ function PeriodsTab() {
         <Field label={t('공장')} className="w-40">
           <Input value={plant} maxLength={32} onChange={(e) => setPlant(e.target.value)} />
         </Field>
-        <Field label={t('기간 (연도)')} className="w-28">
+        <Field label={t('생산 연도')} className="w-28">
           <Input inputMode="numeric" value={period} onChange={(e) => setPeriod(e.target.value)} />
         </Field>
         <Field label={t('원소 · 재료')} className="w-32">
           <Input value={material} maxLength={32} onChange={(e) => setMaterial(e.target.value)} />
         </Field>
         <Button type="submit" disabled={!valid || r.pending}>
-          {t('기간 계정 열기')}
+          {t('생산 장부 만들기')}
         </Button>
-        <p className="w-full text-xs text-ink-400">{t('공장 · 기간 · 재료마다 계정은 하나만 열 수 있습니다. 로트 화면의 ‘기간 투입’으로 생산에 쓴 로트를 넣은 뒤 신고합니다.')}</p>
+        <p className="w-full text-xs text-ink-400">{t('공장 · 연도 · 재료마다 장부는 하나만 만들 수 있습니다. 장부를 여러 개 만들어 유리한 것만 골라 신고하는 것을 막기 위해서입니다.')}</p>
         <JobLine job={r.job} className="w-full" />
         <ErrorLine error={r.error} />
       </form>
       {(periods.data ?? []).map((a) => (
         <AccountCard key={a.id} a={a} />
       ))}
-      {periods.data?.length === 0 && <p className="py-6 text-center text-sm text-ink-400">{t('아직 연 기간 계정이 없습니다.')}</p>}
+      {periods.data?.length === 0 && <p className="py-6 text-center text-sm text-ink-400">{t('아직 만든 생산 장부가 없습니다.')}</p>}
     </div>
   );
 }
@@ -608,7 +621,7 @@ export function CompanyHome({ me }: { me: Profile }) {
     const all: [Tab, string][] = [
       ['lots', '내 로트'],
       ['issue', me.recycler ? '재활용 원료 발행' : '발행'],
-      ['periods', '공장 · 기간 신고'],
+      ['periods', '재활용 함량 신고'],
       ['jobs', '작업 내역'],
     ];
     return all.filter(([id]) => id !== 'issue' || me.supplier);

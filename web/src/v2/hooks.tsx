@@ -75,8 +75,8 @@ const OP_LABEL: Record<string, string> = {
   transferLot: '전달',
   processLots: '합치기 · 가공',
   attestOrder: '주문 증명',
-  openPeriod: '기간 계정 열기',
-  consumeIntoPeriod: '기간 투입',
+  openPeriod: '생산 장부 만들기',
+  consumeIntoPeriod: '생산에 사용',
   declareShare: '재활용 비율 신고',
 };
 export const opLabel = (op: string) => t(OP_LABEL[op] ?? op);
