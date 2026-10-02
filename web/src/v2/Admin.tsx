@@ -1,5 +1,5 @@
 import { t, useI18n } from '@/lib/i18n';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, ErrorLine, Field, Heading, Input, Select } from '@/components/ui';
 import { v2, type Profile, type TenantCreated } from './api';
@@ -62,8 +62,8 @@ function CreateTenant() {
   );
 }
 
-function Chip({ on, label }: { on: boolean; label: string }) {
-  return <span className={on ? 'rounded-full bg-accent/15 px-2 py-0.5 text-accent' : 'rounded-full bg-ink-800 px-2 py-0.5 text-ink-500'}>{on ? '✓ ' : ''}{label}</span>;
+function Badge({ children }: { children: ReactNode }) {
+  return <span className="rounded-full bg-accent/15 px-2 py-0.5 text-accent">✓ {children}</span>;
 }
 
 function TenantRow({ tn }: { tn: Tenant }) {
@@ -77,11 +77,14 @@ function TenantRow({ tn }: { tn: Tenant }) {
         <div className="min-w-0">
           <p className="text-sm font-medium">{tn.name}</p>
           <p className="truncate font-mono text-[11px] text-ink-400">{tn.partyId}</p>
-          <p className="mt-1 flex flex-wrap gap-1.5 text-[11px]">
-            <Chip on={tn.receivingKey} label={t('수신 키')} />
-            <Chip on={tn.supplier} label={t('공급업체')} />
-            <Chip on={!!tn.recycler} label={tn.recycler === 'other' ? t('재활용 · EU 외') : t('재활용 · EU')} />
-          </p>
+          {(tn.supplier || tn.recycler) && (
+            <p className="mt-1 flex flex-wrap gap-1.5 text-[11px]">
+              {tn.supplier && <Badge>{t('공급업체 인증 완료')}</Badge>}
+              {tn.recycler && <Badge>{tn.recycler === 'eu' ? t('재활용 원료 발행 가능 · EU (1.3배 가산)') : t('재활용 원료 발행 가능 · EU 외')}</Badge>}
+            </p>
+          )}
+          {/* Registered automatically when the account is created; shown only while it is missing. */}
+          {!tn.receivingKey && <p className="mt-1 text-[11px] text-amber">{t('수신 키가 아직 체인에 없어 로트를 받을 수 없습니다. 실패했다면 노드를 다시 시작할 때 자동으로 다시 등록됩니다.')}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {!tn.supplier && (

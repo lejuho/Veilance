@@ -391,4 +391,8 @@ export const messages: Record<string, string> = {
   "공급사 선택…": "Pick a supplier…",
   "직접 입력": "Entered by hand",
   "직접 입력…": "Enter by hand…",
+  "공급업체 인증 완료": "Certified supplier",
+  "재활용 원료 발행 가능 · EU (1.3배 가산)": "May issue recycled material · EU (counts 1.3×)",
+  "재활용 원료 발행 가능 · EU 외": "May issue recycled material · non-EU",
+  "수신 키가 아직 체인에 없어 로트를 받을 수 없습니다. 실패했다면 노드를 다시 시작할 때 자동으로 다시 등록됩니다.": "No receiving key on chain yet, so this company cannot receive lots. If registration failed, it is retried when the node restarts.",
 };

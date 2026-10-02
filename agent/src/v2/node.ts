@@ -219,6 +219,11 @@ export const bootNode = async (): Promise<void> => {
       nodeState.contractAddress = deployment.contractAddress;
       for (const rt of runtimes.values()) await connect(rt, deployment.contractAddress);
       console.log(`v2 contract at ${deployment.contractAddress}`);
+      // A receiving key whose registration was rejected (e.g. its fee fell outside the
+      // DUST validity window, node error 171) is registered again on every boot.
+      const l = await readLedger();
+      for (const rt of runtimes.values())
+        if (rt.file.role === "company" && !l.partyEncKeys.member(fromHex(partyIdHex(rt)))) enqueue(rt, "registerEncKey", () => registerEncKeyTx(rt));
     }
     nodeState.ready = true;
     nodeState.step = "ready";
