@@ -48,6 +48,8 @@ type Account = {
   salt?: string;
 };
 type CompanyProfile = { country: string; kind: string };
+// Why the policy authority declined: at least one checklist reason, a note when "other".
+type Declined = { reasons: string[]; note?: string; at: string };
 // What the company asked the policy authority to certify when the platform onboarded it.
 type Applied = { supplier: boolean; recycler: 'eu' | 'other' | null };
 type Tenant = {
@@ -56,7 +58,7 @@ type Tenant = {
   role: 'admin' | 'company' | 'platform';
   profile?: CompanyProfile;
   applied?: Applied;
-  declined?: boolean;
+  declined?: Declined;
   apiKey: string;
   partyId: string;
   certId: string;
@@ -65,7 +67,7 @@ type Tenant = {
   receivingKey: boolean;
 };
 type State = {
-  version: 2;
+  version: 3;
   block: number;
   contractAddress: string | null;
   policyVersion: number;
@@ -128,7 +130,7 @@ const iso = (day: number, hour: number, sec = 0) => new Date(Date.UTC(2026, 8, d
 
 const seed = (): State => {
   const s: State = {
-    version: 2,
+    version: 3,
     block: 18_240,
     contractAddress: rand(32),
     policyVersion: 9,
@@ -194,7 +196,7 @@ const load = (): State => {
   } catch {
     /* storage is optional */
   }
-  if (!state || state.version !== 2) state = seed();
+  if (!state || state.version !== 3) state = seed();
   return state;
 };
 const save = () => {
@@ -441,7 +443,11 @@ export async function simRequest<T>(method: string, path: string, body: unknown,
   };
   if (p === '/v2/admin/applications/decline') {
     admin();
-    byParty(b.partyId).declined = true; // off chain: nothing was certified
+    const reasons = Array.isArray(b.reasons) ? (b.reasons as unknown[]).map(String).filter(Boolean) : [];
+    const note = typeof b.note === 'string' ? b.note.trim() : '';
+    if (!reasons.length) throw new SimError('pick at least one reason', 400, 'bad_request');
+    if (reasons.includes('other') && !note) throw new SimError('describe the other reason', 400, 'bad_request');
+    byParty(b.partyId).declined = { reasons, note: note || undefined, at: now() }; // off chain: nothing was certified
     save();
     return { declined: true } as T;
   }

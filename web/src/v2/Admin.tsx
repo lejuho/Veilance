@@ -16,8 +16,29 @@ type Tenant = {
   receivingKey: boolean;
   profile?: CompanyProfile;
   applied?: Applied;
-  declined?: boolean;
+  declined?: { reasons: string[]; note?: string; at: string };
 };
+
+// The policy authority's checklist for declining an application (simulation).
+const DECLINE_REASONS: [string, string][] = [
+  ['kyc', '사업자 · 법인 확인 서류가 맞지 않음'],
+  ['audit', '재활용 시설 감사 보고서 미제출 또는 만료'],
+  ['eu', 'EU 역내 시설 증빙 부족'],
+  ['origin', '원산지(광산 · 시설) 정보 불충분'],
+  ['sanctions', '제재 · 규제 대상 여부 확인 필요'],
+  ['other', '기타'],
+];
+const reasonLabel = (key: string) => t(DECLINE_REASONS.find(([k]) => k === key)?.[1] ?? key);
+
+function DeclineNote({ d }: { d: NonNullable<Tenant['declined']> }) {
+  useI18n();
+  return (
+    <p className="mt-1 text-[11px] text-red">
+      {t('반려 사유')}: {d.reasons.filter((r) => r !== 'other').map(reasonLabel).join(' · ')}
+      {d.note ? `${d.reasons.length > 1 ? ' · ' : ''}${d.note}` : ''}
+    </p>
+  );
+}
 
 /** Applied for something the ledger does not grant yet, and not declined. */
 const isPending = (tn: Tenant) => !!tn.applied && !tn.declined && ((tn.applied.supplier && !tn.supplier) || (!!tn.applied.recycler && !tn.recycler));
@@ -157,10 +178,14 @@ function ApplicationRow({ tn }: { tn: Tenant }) {
   const qc = useQueryClient();
   const supplier = useRun<{ partyId: string; certId: string }>('POST', '/v2/admin/suppliers');
   const recycler = useRun<{ partyId: string; certId: string; isEu: boolean }>('POST', '/v2/admin/recyclers');
+  const [declining, setDeclining] = useState(false);
+  const [reasons, setReasons] = useState<string[]>([]);
+  const [note, setNote] = useState('');
   const decline = useMutation({
-    mutationFn: () => v2('POST', '/v2/admin/applications/decline', { partyId: tn.partyId }),
+    mutationFn: () => v2('POST', '/v2/admin/applications/decline', { partyId: tn.partyId, reasons, note: note.trim() }),
     onSuccess: () => qc.invalidateQueries({ queryKey: q2.tenants }),
   });
+  const canDecline = reasons.length > 0 && (!reasons.includes('other') || !!note.trim());
   const a = tn.applied!;
   return (
     <div className="border-t border-ink-700 py-3">
@@ -185,11 +210,44 @@ function ApplicationRow({ tn }: { tn: Tenant }) {
               {a.recycler === 'eu' ? t('재활용 업체 승인 · EU') : t('재활용 업체 승인 · EU 외')}
             </Button>
           )}
-          <Button size="sm" variant="ghost" disabled={decline.isPending} onClick={() => decline.mutate()}>
-            {t('반려')}
-          </Button>
+          {!declining && (
+            <Button size="sm" variant="ghost" onClick={() => setDeclining(true)}>
+              {t('반려')}
+            </Button>
+          )}
         </div>
       </div>
+      {declining && (
+        <form
+          className="mt-3 space-y-3 rounded-lg border border-red/40 bg-ink-900 p-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (canDecline && !decline.isPending) decline.mutate();
+          }}
+        >
+          <p className="text-sm font-medium">{t('반려 사유 (하나 이상 선택)')}</p>
+          <div className="grid gap-1.5 sm:grid-cols-2">
+            {DECLINE_REASONS.map(([key, label]) => (
+              <label key={key} className="flex items-center gap-2 text-xs text-ink-200">
+                <input type="checkbox" checked={reasons.includes(key)} onChange={(e) => setReasons((r) => (e.target.checked ? [...r, key] : r.filter((x) => x !== key)))} />
+                {t(label)}
+              </label>
+            ))}
+          </div>
+          <Field label={reasons.includes('other') ? t('설명 (기타를 고르면 필수)') : t('설명 (선택)')}>
+            <Input value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder={t('플랫폼과 신청 회사에 전달됩니다')} />
+          </Field>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="submit" size="sm" disabled={!canDecline || decline.isPending}>
+              {t('반려 확정')}
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setDeclining(false)}>
+              {t('취소')}
+            </Button>
+            {!canDecline && <span className="text-[11px] text-ink-400">{reasons.includes('other') && !note.trim() ? t('기타 사유를 적어 주세요.') : t('사유를 하나 이상 고르세요.')}</span>}
+          </div>
+        </form>
+      )}
       <JobLine job={supplier.job ?? recycler.job} className="mt-1" />
       <ErrorLine error={supplier.error ?? recycler.error ?? decline.error} />
     </div>
@@ -203,7 +261,12 @@ function MemberRow({ tn }: { tn: Tenant }) {
     <div className="border-t border-ink-700 py-3">
       <Who tn={tn} />
       <Granted tn={tn} />
-      {tn.declined && <p className="mt-1 text-[11px] text-red">{t('반려됨 — 체인에는 아무것도 기록되지 않았습니다')}</p>}
+      {tn.declined && (
+        <>
+          <p className="mt-1 text-[11px] text-red">{t('반려됨 — 체인에는 아무것도 기록되지 않았습니다')}</p>
+          <DeclineNote d={tn.declined} />
+        </>
+      )}
       {nothing && !tn.declined && <p className="mt-1 text-[11px] text-ink-400">{t('인증 신청 없음 · 로트를 받기만 합니다')}</p>}
     </div>
   );
@@ -319,6 +382,7 @@ export function PlatformHome() {
           <div key={tn.id} className="flex flex-wrap items-start justify-between gap-3 border-t border-ink-700 py-3">
             <div className="min-w-0">
               <Who tn={tn} />
+              {tn.declined && <DeclineNote d={tn.declined} />}
             </div>
             <p className="text-xs">{status(tn)}</p>
           </div>
